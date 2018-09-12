@@ -48,7 +48,7 @@ def train(mnist, mnist_datasets):
     )
     #add weights_instance 表示各节点之间的权重 [0.5 0.5]表示一开始的local和node1之间接受一半的train数据
     weights_node = tf.Variable(
-        tf.constant(0.5, shape = [2]), trainable = True
+        tf.constant(0.5 * BATCH_SIZE, shape = [2]), trainable = True
     )
     
     #计算前向传播的结果
@@ -86,7 +86,7 @@ def train(mnist, mnist_datasets):
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
     with tf.Session() as sess:
         # 初始化变量
-        init_op = tf.global_variables_initializer()
+        init_op = tf.initialize_all_variables()
         sess.run(init_op)
         # 准备验证数据。一般在神经网络的训练过程中会通过验证数据要大致判断停止的
         # 条件和评判训练的效果。
@@ -100,10 +100,10 @@ def train(mnist, mnist_datasets):
         # 模型优劣的最后评价标准。
         #tstfeed改为odd_part
         test_feed = {
-            # x: mnist.test.images,
-            # y_: mnist.test.labels
-            x: mnist_datasets.test_odd.images,
-            y_:  mnist_datasets.test_odd.labels
+            x: mnist.test.images,
+            y_: mnist.test.labels
+            # x: mnist_datasets.test_odd.images,
+            # y_:  mnist_datasets.test_odd.labels
         }
 
         # 认真体会这个过程，整个模型的执行流程与逻辑都在这一段
@@ -114,7 +114,7 @@ def train(mnist, mnist_datasets):
         sess.run(train_step, feed_dict={x: xs, y_: ys})
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
-            if i % 100 == 0:
+            if i % 1000 == 0:
                 # 计算滑动平均模型在验证数据上的结果。因为MNIST数据集比较小，所以一次
                 # 可以处理所有的验证数据。为了计算方便，本样例程序没有将验证数据划分为更
                 # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
@@ -127,11 +127,12 @@ def train(mnist, mnist_datasets):
             # xs, ys = mnist.train.next_batch(BATCH_SIZE)
             # sess.run(train_step, feed_dict={x: xs, y_: ys})
             # M: 加入24680 传输数据继续训练
-            
-            xs, ys = mnist_datasets.train_odd.next_batch(BATCH_SIZE * weights_node[0])
-            xo, yo = mnist_datasets.train_even.next_batch(BATCH_SIZE * weights_node[1] )
-            xc = np.vstack(xs,xo)
-            sess.run(train_step, feed_dict={x: xs, y_: ys})
+            w = sess.run(weights_node)
+            xs, ys = mnist_datasets.train_odd.next_batch(w[0])
+            xo, yo = mnist_datasets.train_even.next_batch(w[1])
+            xc = np.vstack((xs,xo))
+            yc = np.vstack((ys,yo))
+            sess.run(train_step, feed_dict={x: xc, y_: yc})
 
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
