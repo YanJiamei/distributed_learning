@@ -48,7 +48,7 @@ def train(mnist, mnist_datasets):
     )
     #add weights_instance 表示各节点之间的权重 [0.5 0.5]表示一开始的local和node1之间接受一半的train数据
     weights_node = tf.Variable(
-        tf.constant(0.5 * BATCH_SIZE, shape = [2]), trainable = True
+        tf.constant(50, shape = [2]), trainable = True
     )
     
     #计算前向传播的结果
