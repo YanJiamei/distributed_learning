@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.contrib.learn.python.learn.datasets import mnist 
+from tensorflow.contrib.learn.python.learn.datasets import mnist as mnistdatasets
 import numpy as np
 from tensorflow.python.framework import dtypes
 import collections
@@ -110,8 +110,9 @@ def train(mnist, mnist_datasets):
         # 迭代的训练神经网络
 
         # M：local数据13579先训练一个batch
-        xs, ys = mnist_datasets.train_odd.next_batch(BATCH_SIZE)
-        sess.run(train_step, feed_dict={x: xs, y_: ys})
+        # xs, ys = mnist_datasets.train_odd.next_batch(BATCH_SIZE)
+        # sess.run(train_step, feed_dict={x: xs, y_: ys})
+        train_odd = mnist_datasets.train_odd
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
             if i % 1000 == 0:
@@ -127,12 +128,15 @@ def train(mnist, mnist_datasets):
             # xs, ys = mnist.train.next_batch(BATCH_SIZE)
             # sess.run(train_step, feed_dict={x: xs, y_: ys})
             # M: 加入24680 传输数据继续训练
-            w = sess.run(weights_node)
-            xs, ys = mnist_datasets.train_odd.next_batch(w[0])
-            xo, yo = mnist_datasets.train_even.next_batch(w[1])
-            xc = np.vstack((xs,xo))
-            yc = np.vstack((ys,yo))
-            sess.run(train_step, feed_dict={x: xc, y_: yc})
+            # w = sess.run(weights_node)
+            
+            # xs, ys = mnist_datasets.train_odd.next_batch(w[0])
+            xe, ye = mnist_datasets.train_even.next_batch(BATCH_SIZE)
+            xc = np.vstack((xe,mnist_datasets.train_odd.images))
+            yc = np.vstack((ye,mnist_datasets.train_odd.labels))
+            train_odd = mnistdatasets.DataSet(xc, yc, dtype = dtypes.uint8, reshape = False)
+            xnext, ynext = train_odd.next_batch(BATCH_SIZE)
+            sess.run(train_step, feed_dict={x: xnext, y_: ynext})
 
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
@@ -153,7 +157,7 @@ def extract_n_data_sets(datasets, label = [1,2,3]):
             extract_labels = np.append(extract_labels , test_data_set_label[i])
     extract_images = extract_images.astype(np.float32)
         # return mnist.DataSet(extract_images, extract_labels, dtype = dtypes.float32, reshape = True)
-    return mnist.DataSet(extract_images.reshape(cnt,784), extract_labels.reshape(cnt,10)
+    return mnistdatasets.DataSet(extract_images.reshape(cnt,784), extract_labels.reshape(cnt,10)
                         , dtype = dtypes.uint8, reshape = False)
 # 主程序入口
 Datasets = collections.namedtuple('Datasets', ['train_odd', 'train_even'
