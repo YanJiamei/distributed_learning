@@ -20,7 +20,7 @@ def extract_n_data_sets(datasets, label = [1,2,3]):
                         , dtype = dtypes.uint8, reshape = False)
 
 Datasets = collections.namedtuple('Datasets', ['train_odd', 'train_even'
-                                    , 'test_odd', 'validation_odd'])
+                                    , 'test_odd', 'test_even', 'validation_odd', 'validation_even'])
 
 def main(argv=None):
     # 声明处理MNIST数据集的类，这个类在初始化时会自动下载数据。
@@ -29,9 +29,12 @@ def main(argv=None):
     mnist_13579_train = extract_n_data_sets(mnist.test,label=[1,3,5,7,9])
     mnist_24680_train = extract_n_data_sets(mnist.test,label=[2,4,6,8,0])
     mnist_13579_validation = extract_n_data_sets(mnist.validation, label=[1,3,5,7,9])
+    mnist_24680_validation = extract_n_data_sets(mnist.validation, label=[2,4,6,8,0])
     mnist_13579_test = extract_n_data_sets(mnist.validation, label=[1,3,5,7,9])
+    mnist_24680_test = extract_n_data_sets(mnist.validation, label=[2,4,6,8,0])
     mnist_datasets = Datasets(train_odd = mnist_13579_train, train_even = mnist_24680_train
-                                    , test_odd = mnist_13579_test, validation_odd = mnist_13579_validation)
+                                    , validation_odd = mnist_13579_validation, validation_even = mnist_24680_validation
+                                    , test_odd = mnist_13579_test, test_even = mnist_24680_test)
     np.save('./data/mnist_datasets.npy', mnist_datasets)
     # x1,y1 = extract_n_data_sets(mnist,label=1)
     print ('ok')
