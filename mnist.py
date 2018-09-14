@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
-from tensorflow.contrib.learn.python.learn.datasets import mnist 
+from tensorflow.contrib.learn.python.learn.datasets import mnist as MDataset
 import numpy as np
 from tensorflow.python.framework import dtypes
 import collections
@@ -11,6 +11,7 @@ LAYER1_NODE = 500
 BATCH_SIZE = 100
 WEIGHT_INIT = 1. #初始化所有来源样本的权重
 DISTRIBUTE_NODE_NUM = 2 #参与的节点数目
+TRANSFER_SIZE = 1 #相互传输的instance的数目，应该也是可以更改的
 
 LEARNING_RATE_BASE = 0.8
 LEARNING_RATE_DECAY = 0.99
@@ -46,9 +47,12 @@ def train(mnist, mnist_datasets):
     biases2 = tf.Variable(
         tf.constant(0.1, shape = [OUTPUT_NODE])
     )
-    #add weights_instance 表示各节点之间的权重 [0.5 0.5]表示一开始的local和node1之间接受一半的train数据
+    #add weights_instance 表示各节点之间传输的数据的权重 一开始都为1
+    #！！！权重不是乘在输入样本上 而是乘在loss函数中的！可增加部分样本对loss的影响！！！
+    #权重w1=[w11,w12,...,w1n] 每次更新样本库都是更新w->w'
+    #:可以将w和image、label组成数据结构，同步更新！
     weights_node = tf.Variable(
-        tf.constant(BATCH_SIZE//DISTRIBUTE_NODE_NUM, shape = [2]), trainable = True
+        tf.constant(1, shape = [1], dtype=tf.float32), trainable = True
     )
     
     #计算前向传播的结果
@@ -102,6 +106,12 @@ def train(mnist, mnist_datasets):
             x: mnist_datasets.validation_odd.images,
             y_:  mnist_datasets.validation_odd.labels            
         }
+        validate_feed_even = {
+            # x: mnist.validation.images,
+            # y_: mnist.validation.labels
+            x: mnist_datasets.validation_even.images,
+            y_:  mnist_datasets.validation_even.labels            
+        }
         # 准备测试数据。在真实的应用中，这部分数据在训练时是不可见的，这个数据只是作为
         # 模型优劣的最后评价标准。
         #tstfeed改为odd_part
@@ -117,6 +127,12 @@ def train(mnist, mnist_datasets):
             x: mnist_datasets.test_odd.images,
             y_:  mnist_datasets.test_odd.labels
         }
+        test_feed_even = {
+            # x: mnist.test.images,
+            # y_: mnist.test.labels
+            x: mnist_datasets.test_even.images,
+            y_:  mnist_datasets.test_even.labels
+        }
         # 认真体会这个过程，整个模型的执行流程与逻辑都在这一段
         # 迭代的训练神经网络
 
@@ -125,11 +141,11 @@ def train(mnist, mnist_datasets):
         # sess.run(train_step, feed_dict={x: xs, y_: ys})
 
         #先训练local数据 至收敛
-        LOCAL_TRAIN_STEP = 100
-        OTHER_TRAIN_STEP = 10
-        for i in range(LOCAL_TRAIN_STEP):
+        xc = mnist_datasets.train_odd.images
+        yc = mnist_datasets.train_odd.labels
+        for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
-            if i % 10 == 0:
+            if i % 100 == 0:
                 # 计算滑动平均模型在验证数据上的结果。因为MNIST数据集比较小，所以一次
                 # 可以处理所有的验证数据。为了计算方便，本样例程序没有将验证数据划分为更
                 # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
@@ -138,61 +154,40 @@ def train(mnist, mnist_datasets):
                 validate_acc = sess.run(accuracy, feed_dict=validate_feed)
                 print("After %d training step(s), validation accuracy-all is %g " % (i, validate_acc))
                 validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_odd)
-                print("After %d training step(s), validation accuracy-odd is %g \n" % (i, validate_acc_odd))
+                print("After %d training step(s), validation accuracy-odd is %g " % (i, validate_acc_odd))
+                validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_even)
+                print("After %d training step(s), validation accuracy-even is %g \n" % (i, validate_acc_odd))
             # 产生这一轮使用的一个batch的训练数据，并运行训练过程。
             # xs, ys = mnist.train.next_batch(BATCH_SIZE)
             # sess.run(train_step, feed_dict={x: xs, y_: ys})
-            # M: 加入24680 传输数据继续训练
-            w = sess.run(weights_node)
-            xs, ys = mnist_datasets.train_odd.next_batch(BATCH_SIZE)
-            # xo, yo = mnist_datasets.train_even.next_batch(w[1])
-            # xc = np.vstack((xs,xo))
-            # yc = np.vstack((ys,yo))
-            # # Shuffle the data
-            # perm = np.arange(w[0]+w[1])
-            # np.random.shuffle(perm)
-            # xc = xc[perm]
-            # yc = yc[perm]
-            sess.run(train_step, feed_dict={x: xs, y_: ys})
-        
-        #计算local和邻接数据的KL-divergence之后 加入邻接数据训练
-        for i in range(OTHER_TRAIN_STEP):
-            # 每1000轮输出一次在验证数据集上的测试结果
-            if i % 10 == 0:
-                # 计算滑动平均模型在验证数据上的结果。因为MNIST数据集比较小，所以一次
-                # 可以处理所有的验证数据。为了计算方便，本样例程序没有将验证数据划分为更
-                # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
-                # 会导致计算时间过长甚至发生内存溢出的错误。
-                # 注意我们用的是滑动平均之后的模型来跑我们验证集的accuracy
-                validate_acc = sess.run(accuracy, feed_dict=validate_feed)
-                print("After %d training step(s), validation accuracy is %g " % (i, validate_acc))
 
-            # 产生这一轮使用的一个batch的训练数据，并运行训练过程。
-            # xs, ys = mnist.train.next_batch(BATCH_SIZE)
-            # sess.run(train_step, feed_dict={x: xs, y_: ys})
-            # M: 加入24680 传输数据继续训练
-            w = sess.run(weights_node)
-            xo, yo = mnist_datasets.train_odd.next_batch(w[0])
-            xe, ye = mnist_datasets.train_even.next_batch(w[1])
-            xc = np.vstack((xe,xo))
-            yc = np.vstack((ye,yo))
-            # Shuffle the data
-            perm = np.arange(w[0]+w[1])
+            # 计算权重weights
+            # w = sess.run(weights_node)
+            # xo, yo = mnist_datasets.train_odd.next_batch(w[0])
+            xe, ye = mnist_datasets.train_odd.next_batch(TRANSFER_SIZE)
+            # 传输的数据需要乘以权重（通过KL距离来衡量，越大的权重对结果的影响大）加入本地数据集合中
+            xc = np.vstack((xe,xc))
+            yc = np.vstack((ye,yc))
+            perm = np.arange(xc.shape[0])
             np.random.shuffle(perm)
             xc = xc[perm]
             yc = yc[perm]
-            sess.run(train_step, feed_dict={x: xc, y_: yc})
+            sess.run(train_step, feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE]})
+        
+       
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
         # 的调用就可以看出来了，因为accuracy只与average_y有关
         test_acc = sess.run(accuracy, feed_dict=test_feed)
-        print("After %d training step(s), test accuracy-all is %g" % (LOCAL_TRAIN_STEP + OTHER_TRAIN_STEP, test_acc))
+        print("After %d training step(s), test accuracy-all is %g" % (TRAINING_STEPS, test_acc))
         test_acc_odd = sess.run(accuracy,feed_dict=test_feed_odd)
-        print("After %d training step(s), test accuracy-odd is %g" % (LOCAL_TRAIN_STEP + OTHER_TRAIN_STEP, test_acc_odd))
+        print("After %d training step(s), test accuracy-odd is %g" % (TRAINING_STEPS, test_acc_odd))
+        test_acc_odd = sess.run(accuracy,feed_dict=test_feed_even)
+        print("After %d training step(s), test accuracy-even is %g\n=============================================================\n" % (TRAINING_STEPS, test_acc_odd))
 
 # 主程序入口
 Datasets = collections.namedtuple('Datasets', ['train_odd', 'train_even'
-                                    , 'test_odd', 'validation_odd'])
+                                    , 'test_odd', 'test_even', 'validation_odd', 'validation_even'])
 def main(argv=None):
     # 声明处理MNIST数据集的类，这个类在初始化时会自动下载数据。
     mnist = input_data.read_data_sets("./data", one_hot=True)
@@ -203,7 +198,8 @@ def main(argv=None):
     # mnist_13579_test = extract_n_data_sets(mnist.validation, label=[1,3,5,7,9])
     mnist_datasets_load = np.load('./data/mnist_datasets.npy')
     mnist_datasets = Datasets(train_odd = mnist_datasets_load[0], train_even = mnist_datasets_load[1]
-                                    , test_odd = mnist_datasets_load[3], validation_odd = mnist_datasets_load[2])
+                                    , validation_odd = mnist_datasets_load[2], validation_even = mnist_datasets_load[3]
+                                    , test_odd = mnist_datasets_load[4], test_even = mnist_datasets_load[5])
     
     train(mnist=mnist, mnist_datasets=mnist_datasets)
     
