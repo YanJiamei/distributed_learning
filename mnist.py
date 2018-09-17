@@ -9,9 +9,9 @@ OUTPUT_NODE = 10
 
 LAYER1_NODE = 500
 BATCH_SIZE = 100
-WEIGHT_INIT = 1. #初始化所有来源样本的权重
+WEIGHT_INIT = 1#初始化所有来源样本的权重
 DISTRIBUTE_NODE_NUM = 2 #参与的节点数目
-TRANSFER_SIZE = 1 #相互传输的instance的数目，应该也是可以更改的
+TRANSFER_SIZE = 100 #相互传输的instance的数目，应该也是可以更改的
 
 LEARNING_RATE_BASE = 0.8
 LEARNING_RATE_DECAY = 0.99
@@ -33,6 +33,7 @@ def train(mnist, mnist_datasets):
     #模型输入 shape = [None, Input]其中None表示batch_size大小
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
+    w = tf.placeholder(tf.float32, [None, 1], name = 'instance-weight')
     #隐藏层参数
     weights1 = tf.Variable(
         tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev = 0.1) #初始化
@@ -52,7 +53,7 @@ def train(mnist, mnist_datasets):
     #权重w1=[w11,w12,...,w1n] 每次更新样本库都是更新w->w'
     #:可以将w和image、label组成数据结构，同步更新！
     weights_node = tf.Variable(
-        tf.constant(1, shape = [1], dtype=tf.float32), trainable = True
+        tf.constant(WEIGHT_INIT, shape = [1], dtype=tf.float32), trainable = True
     )
     
     #计算前向传播的结果
@@ -67,7 +68,9 @@ def train(mnist, mnist_datasets):
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
         logits = y, labels = tf.argmax(y_,1)
     )
-    cross_entropy_mean = tf.reduce_mean(cross_entropy)
+    #给instance加权
+    weighted_cross_entropy = tf.multiply(cross_entropy, tf.transpose(w))
+    cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)
     #L2正则化损失
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
     regularization = regularizer(weights1) + regularizer(weights2)
@@ -94,6 +97,7 @@ def train(mnist, mnist_datasets):
         sess.run(init_op)
         # 准备验证数据。一般在神经网络的训练过程中会通过验证数据要大致判断停止的
         # 条件和评判训练的效果。
+        weights_node = sess.run(weights_node)
         validate_feed = {
             x: mnist.validation.images,
             y_: mnist.validation.labels
@@ -143,9 +147,10 @@ def train(mnist, mnist_datasets):
         #先训练local数据 至收敛
         xc = mnist_datasets.train_odd.images
         yc = mnist_datasets.train_odd.labels
+        wc = np.ones((yc.shape[0],1), dtype='float64') #跟踪每个instance的权重
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
-            if i % 100 == 0:
+            if i % 1 == 0:
                 # 计算滑动平均模型在验证数据上的结果。因为MNIST数据集比较小，所以一次
                 # 可以处理所有的验证数据。为了计算方便，本样例程序没有将验证数据划分为更
                 # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
@@ -164,16 +169,25 @@ def train(mnist, mnist_datasets):
             # 计算权重weights
             # w = sess.run(weights_node)
             # xo, yo = mnist_datasets.train_odd.next_batch(w[0])
-            xe, ye = mnist_datasets.train_odd.next_batch(TRANSFER_SIZE)
+            xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
+            we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
             # 传输的数据需要乘以权重（通过KL距离来衡量，越大的权重对结果的影响大）加入本地数据集合中
             xc = np.vstack((xe,xc))
             yc = np.vstack((ye,yc))
+            wc = np.vstack((we,wc))
             perm = np.arange(xc.shape[0])
             np.random.shuffle(perm)
             xc = xc[perm]
             yc = yc[perm]
-            sess.run(train_step, feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE]})
-        
+            wc = wc[perm]
+            # print('xc-----------\n',xc[0:10])
+            # print('yc-----------\n',yc[0:10])
+            # print('wc-----------\n',wc[0:10])
+            # sess.run(cross_entropy_mean,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
+            # print('------------cross_entropy------------\n', sess.run(cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
+            # print('------------weighted_cross_entropy------------\n', sess.run(weighted_cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
+            sess.run(train_step, feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
+            
        
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
