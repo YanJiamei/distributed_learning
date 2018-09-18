@@ -33,7 +33,10 @@ def train(mnist, mnist_datasets):
     #模型输入 shape = [None, Input]其中None表示batch_size大小
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
-    w = tf.placeholder(tf.float32, [None, 1], name = 'instance-weight')
+    w = tf.placeholder(tf.float32, [None, 1], name = 'all-instance-weight')
+    #to calculate the loss of a transferred BATCH, then adjust 'weights_node' for network
+    # x_node_1 = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'node-1-x-input')
+    # y_node_1 = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'node-1-y-input')
     #隐藏层参数
     weights1 = tf.Variable(
         tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev = 0.1) #初始化
@@ -55,7 +58,7 @@ def train(mnist, mnist_datasets):
     weights_node = tf.Variable(
         tf.constant(WEIGHT_INIT, shape = [1], dtype=tf.float32), trainable = True
     )
-    
+    #================================TRAINING=====================================
     #计算前向传播的结果
     y = inference(input_tensor = x, avg_class = None, weights1 = weights1
                     , biases1 = biases1, weights2 = weights2, biases2 = biases2)
@@ -69,7 +72,7 @@ def train(mnist, mnist_datasets):
         logits = y, labels = tf.argmax(y_,1)
     )
     #给instance加权
-    weighted_cross_entropy = tf.multiply(cross_entropy, tf.transpose(w))
+    weighted_cross_entropy = tf.mul(cross_entropy, tf.transpose(w))
     cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)
     #L2正则化损失
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
@@ -86,18 +89,21 @@ def train(mnist, mnist_datasets):
     #优化损失函数loss
     train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step
                                                     , var_list=[weights1, biases1, weights2, biases2])
+    #=======================calculate accuracy============================
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     # 注意这个accuracy是只跟average_y有关的，跟y是无关的
     # 这个运算首先讲一个布尔型的数值转化为实数型，然后计算平均值。这个平均值就是模型在这
     # 一组数据上的正确率
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    #=======================update weights_node===========================
+    # loss_partition = 
     with tf.Session() as sess:
         # 初始化变量
         init_op = tf.initialize_all_variables()
         sess.run(init_op)
         # 准备验证数据。一般在神经网络的训练过程中会通过验证数据要大致判断停止的
         # 条件和评判训练的效果。
-        weights_node = sess.run(weights_node)
+        
         validate_feed = {
             x: mnist.validation.images,
             y_: mnist.validation.labels
@@ -148,6 +154,19 @@ def train(mnist, mnist_datasets):
         xc = mnist_datasets.train_odd.images
         yc = mnist_datasets.train_odd.labels
         wc = np.ones((yc.shape[0],1), dtype='float64') #跟踪每个instance的权重
+        # xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
+        # weights_node = sess.run(weights_node)            
+        # we = weights_node[0] * np.ones((TRANSFER_SIZE, 1), dtype='float64')
+        # # 传输的数据需要乘以权重（通过KL距离来衡量，越大的权重对结果的影响大）加入本地数据集合中
+        # xc = np.vstack((xe,xc))
+        # yc = np.vstack((ye,yc))
+        # wc = np.vstack((we,wc))
+        perm = np.arange(xc.shape[0])
+        np.random.shuffle(perm)
+        xc = xc[perm]
+        yc = yc[perm]
+        wc = wc[perm]
+        weights_node = sess.run(weights_node)
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
             if i % 1 == 0:
@@ -169,17 +188,8 @@ def train(mnist, mnist_datasets):
             # 计算权重weights
             # w = sess.run(weights_node)
             # xo, yo = mnist_datasets.train_odd.next_batch(w[0])
-            xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
-            we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
-            # 传输的数据需要乘以权重（通过KL距离来衡量，越大的权重对结果的影响大）加入本地数据集合中
-            xc = np.vstack((xe,xc))
-            yc = np.vstack((ye,yc))
-            wc = np.vstack((we,wc))
-            perm = np.arange(xc.shape[0])
-            np.random.shuffle(perm)
-            xc = xc[perm]
-            yc = yc[perm]
-            wc = wc[perm]
+            #update weights_node
+            
             # print('xc-----------\n',xc[0:10])
             # print('yc-----------\n',yc[0:10])
             # print('wc-----------\n',wc[0:10])
@@ -188,6 +198,21 @@ def train(mnist, mnist_datasets):
             # print('------------weighted_cross_entropy------------\n', sess.run(weighted_cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
             sess.run(train_step, feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
             
+            # new transfer begins, add instance with weights...
+            xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
+            we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
+            #update weights_node for next transfer
+            # weights_node = sess.run(weights_node)
+            # weights_node = sess.run(weights_node, feed_dict={x,y_,x_node_1,y_node_1,w})
+            # ...to current local instance lib.
+            xc = np.vstack((xe,xc))
+            yc = np.vstack((ye,yc))
+            wc = np.vstack((we,wc))
+            perm = np.arange(xc.shape[0])
+            np.random.shuffle(perm)
+            xc = xc[perm]
+            yc = yc[perm]
+            wc = wc[perm]
        
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
