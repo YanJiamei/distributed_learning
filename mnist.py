@@ -34,10 +34,10 @@ def train(mnist, mnist_datasets):
     #模型输入 shape = [None, Input]其中None表示batch_size大小
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
-    w = tf.placeholder(tf.float32, [None, 1], name = 'all-instance-weight')
+    w = tf.placeholder(tf.float32, [None, 1], name = 'all-instance-weight-local')
     #to calculate the loss of a transferred BATCH, then adjust 'weights_node' for network
-    # x_node_1 = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'node-1-x-input')
-    # y_node_1 = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'node-1-y-input')
+    x_transfer = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'transfer-x-input')
+    y_transfer = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'transfer-y-input')
     #隐藏层参数
     weights1 = tf.Variable(
         tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev = 0.1) #初始化
@@ -56,7 +56,7 @@ def train(mnist, mnist_datasets):
     #！！！权重不是乘在输入样本上 而是乘在loss函数中的！可增加部分样本对loss的影响！！！
     #权重w1=[w11,w12,...,w1n] 每次更新样本库都是更新w->w'
     #:可以将w和image、label组成数据结构，同步更新！
-    weights_node = tf.Variable(
+    weights_node_init = tf.Variable(
         tf.constant(WEIGHT_INIT, shape = [1], dtype=tf.float32), trainable = True
     )
 ##================================TRAINING=====================================
@@ -94,13 +94,25 @@ def train(mnist, mnist_datasets):
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     # 注意这个accuracy是只跟average_y有关的，跟y是无关的
     # 这个运算首先讲一个布尔型的数值转化为实数型，然后计算平均值。这个平均值就是模型在这
-    # 一组数据上的正确率
+    # 一组数据上的正确率 
+    #用作validation和test——local
     correct_prediction_float = tf.cast(correct_prediction, tf.float32)
     accuracy = tf.reduce_mean(correct_prediction_float)
 ##=======================update weights_node===================================
+    #本地加权accuracy_weighted_norm
     correct_prediction_float_weighted = tf.multiply(tf.transpose(w), correct_prediction_float)
     accuracy_weighted = tf.reduce_sum(correct_prediction_float_weighted)
     accuracy_weighted_norm = tf.divide(accuracy_weighted, tf.reduce_sum(w))
+    #传输进来的一个batch的accuracy_transfer_batch
+    y_transfer_infer = inference(input_tensor = x_transfer, avg_class = None, weights1 = weights1
+                    , biases1 = biases1, weights2 = weights2, biases2 = biases2)
+    correct_prediction_t = tf.equal(tf.argmax(y_transfer_infer, 1), tf.argmax(y_transfer, 1))
+    correct_prediction_float_t = tf.cast(correct_prediction_t, tf.float32)
+    accuracy_transfer_batch = tf.reduce_mean(correct_prediction_float_t)
+    #计算weights_node
+    exp_ = tf.exp(1.0-accuracy_transfer_batch)
+    weights_node_update = (accuracy_weighted_norm)*exp_
+
     # loss_partition = 
     with tf.Session() as sess:
         # 初始化变量
@@ -171,7 +183,7 @@ def train(mnist, mnist_datasets):
         xc = xc[perm]
         yc = yc[perm]
         wc = wc[perm]
-        weights_node = sess.run(weights_node)
+        weights_node = sess.run(weights_node_init)
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
             if i % 1 == 0:
@@ -216,18 +228,28 @@ def train(mnist, mnist_datasets):
             if i % 10 == 0:   
                 #update weights_node for next transfer
                 # ...to current local instance lib.
+                # xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
+                # transfer_ac_feed = {
+                #     x: xt,
+                #     y_: yt
+                # }
+                # local_ac_feed = {
+                #     x: xc[BATCH_SIZE:2*BATCH_SIZE], y_: yc[BATCH_SIZE:2*BATCH_SIZE], w: wc[BATCH_SIZE:2*BATCH_SIZE]
+                # }
+                # accuracy_weighted_local = sess.run(accuracy_weighted_norm, feed_dict = local_ac_feed)
+                # accuracy_transfer = sess.run(accuracy, feed_dict = transfer_ac_feed)
+                # exp_ = np.exp(1.0-accuracy_transfer)
+                # weights_node = (accuracy_weighted_local)*exp_
+
                 xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
-                transfer_ac_feed = {
-                    x: xt,
-                    y_: yt
+                weights_update_feed = {
+                    x_transfer: xt,
+                    y_transfer: yt,
+                    x :xc[BATCH_SIZE:2*BATCH_SIZE], 
+                    y_: yc[BATCH_SIZE:2*BATCH_SIZE], 
+                    w: wc[BATCH_SIZE:2*BATCH_SIZE]
                 }
-                local_ac_feed = {
-                    x: xc[BATCH_SIZE:2*BATCH_SIZE], y_: yc[BATCH_SIZE:2*BATCH_SIZE], w: wc[BATCH_SIZE:2*BATCH_SIZE]
-                }
-                accuracy_weighted_local = sess.run(accuracy_weighted_norm, feed_dict = local_ac_feed)
-                accuracy_transfer = sess.run(accuracy, feed_dict = transfer_ac_feed)
-                exp_ = np.exp(1.0-accuracy_transfer)
-                weights_node = (accuracy_weighted_local)*exp_
+                weights_node = sess.run(weights_node_update, feed_dict=weights_update_feed )
 ##=========================================RECEIVE & SHUFFLE ALL DATA======================================================
             xc = np.vstack((xe,xc))
             yc = np.vstack((ye,yc))
