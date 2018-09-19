@@ -212,6 +212,7 @@ def train(mnist, mnist_datasets):
             xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
             we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
 ##=========================================UPDATE WEIGHTS_NODE============================================================            
+            #待到传输的instance有一个batch之后 对比accuracy再做调整，这期间传输过来的数据不断地在更新训练，weights-node不变
             if i % 10 == 0:   
                 #update weights_node for next transfer
                 # ...to current local instance lib.
