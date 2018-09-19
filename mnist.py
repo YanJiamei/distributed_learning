@@ -9,9 +9,9 @@ OUTPUT_NODE = 10
 
 LAYER1_NODE = 500
 BATCH_SIZE = 100
-WEIGHT_INIT = 1#初始化所有来源样本的权重
+WEIGHT_INIT = 1.#初始化所有来源样本的权重
 DISTRIBUTE_NODE_NUM = 2 #参与的节点数目
-TRANSFER_SIZE = 100 #相互传输的instance的数目，应该也是可以更改的
+TRANSFER_SIZE = 10 #相互传输的instance的数目，应该也是可以更改的
 
 LEARNING_RATE_BASE = 0.8
 LEARNING_RATE_DECAY = 0.99
@@ -30,6 +30,7 @@ def inference(input_tensor, avg_class, weights1, biases1,
         pass
 
 def train(mnist, mnist_datasets):
+##=====================Variable Initialization=================================
     #模型输入 shape = [None, Input]其中None表示batch_size大小
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
@@ -58,7 +59,7 @@ def train(mnist, mnist_datasets):
     weights_node = tf.Variable(
         tf.constant(WEIGHT_INIT, shape = [1], dtype=tf.float32), trainable = True
     )
-    #================================TRAINING=====================================
+##================================TRAINING=====================================
     #计算前向传播的结果
     y = inference(input_tensor = x, avg_class = None, weights1 = weights1
                     , biases1 = biases1, weights2 = weights2, biases2 = biases2)
@@ -72,7 +73,7 @@ def train(mnist, mnist_datasets):
         logits = y, labels = tf.argmax(y_,1)
     )
     #给instance加权
-    weighted_cross_entropy = tf.mul(cross_entropy, tf.transpose(w))
+    weighted_cross_entropy = tf.multiply(cross_entropy, tf.transpose(w))
     cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)
     #L2正则化损失
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
@@ -89,13 +90,17 @@ def train(mnist, mnist_datasets):
     #优化损失函数loss
     train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step
                                                     , var_list=[weights1, biases1, weights2, biases2])
-    #=======================calculate accuracy============================
+##=======================calculate accuracy====================================
     correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     # 注意这个accuracy是只跟average_y有关的，跟y是无关的
     # 这个运算首先讲一个布尔型的数值转化为实数型，然后计算平均值。这个平均值就是模型在这
     # 一组数据上的正确率
-    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-    #=======================update weights_node===========================
+    correct_prediction_float = tf.cast(correct_prediction, tf.float32)
+    accuracy = tf.reduce_mean(correct_prediction_float)
+##=======================update weights_node===================================
+    correct_prediction_float_weighted = tf.multiply(tf.transpose(w), correct_prediction_float)
+    accuracy_weighted = tf.reduce_sum(correct_prediction_float_weighted)
+    accuracy_weighted_norm = tf.divide(accuracy_weighted, tf.reduce_sum(w))
     # loss_partition = 
     with tf.Session() as sess:
         # 初始化变量
@@ -175,6 +180,8 @@ def train(mnist, mnist_datasets):
                 # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
                 # 会导致计算时间过长甚至发生内存溢出的错误。
                 # 注意我们用的是滑动平均之后的模型来跑我们验证集的accuracy
+                print("===============TRANSFER WEIGHT: %f ================ \n" % weights_node)
+
                 validate_acc = sess.run(accuracy, feed_dict=validate_feed)
                 print("After %d training step(s), validation accuracy-all is %g " % (i, validate_acc))
                 validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_odd)
@@ -196,15 +203,31 @@ def train(mnist, mnist_datasets):
             # sess.run(cross_entropy_mean,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
             # print('------------cross_entropy------------\n', sess.run(cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
             # print('------------weighted_cross_entropy------------\n', sess.run(weighted_cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
-            sess.run(train_step, feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
+            local_feed = {
+                x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]
+            }
+            sess.run(train_step, feed_dict = local_feed)
             
             # new transfer begins, add instance with weights...
             xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
             we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
-            #update weights_node for next transfer
-            # weights_node = sess.run(weights_node)
-            # weights_node = sess.run(weights_node, feed_dict={x,y_,x_node_1,y_node_1,w})
-            # ...to current local instance lib.
+##=========================================UPDATE WEIGHTS_NODE============================================================            
+            if i % 10 == 0:   
+                #update weights_node for next transfer
+                # ...to current local instance lib.
+                xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
+                transfer_ac_feed = {
+                    x: xt,
+                    y_: yt
+                }
+                local_ac_feed = {
+                    x: xc[BATCH_SIZE:2*BATCH_SIZE], y_: yc[BATCH_SIZE:2*BATCH_SIZE], w: wc[BATCH_SIZE:2*BATCH_SIZE]
+                }
+                accuracy_weighted_local = sess.run(accuracy_weighted_norm, feed_dict = local_ac_feed)
+                accuracy_transfer = sess.run(accuracy, feed_dict = transfer_ac_feed)
+                exp_ = np.exp(1.0-accuracy_transfer)
+                weights_node = (accuracy_weighted_local)*exp_
+##=========================================RECEIVE & SHUFFLE ALL DATA======================================================
             xc = np.vstack((xe,xc))
             yc = np.vstack((ye,yc))
             wc = np.vstack((we,wc))
@@ -213,7 +236,7 @@ def train(mnist, mnist_datasets):
             xc = xc[perm]
             yc = yc[perm]
             wc = wc[perm]
-       
+##=========================================NEXT TRAINING===================================================================       
         # 在训练结束之后，在测试数据上检测神经网络模型的最终正确率。
         # 同样，我们最终的模型用的是滑动平均之后的模型，从这个accuracy函数
         # 的调用就可以看出来了，因为accuracy只与average_y有关
