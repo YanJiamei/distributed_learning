@@ -304,13 +304,20 @@ def main(argv=None):
     #                                 , validation_odd = mnist_datasets_load[2], validation_even = mnist_datasets_load[3]
     #                                 , test_odd = mnist_datasets_load[4], test_even = mnist_datasets_load[5])
     
-    mnist_datasets_load = np.load('./data/mnist_13579.npy')
-    mnist_odd = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
-    mnist_datasets_load = np.load('./data/mnist_24680.npy')
-    mnist_even = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
-    mnist_datasets_load = np.load('./data/mnist_135702.npy')
-    mnist_mix = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
-    
+    # mnist_datasets_load = np.load('./data/mnist_13579.npy')
+    # mnist_odd = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    # mnist_datasets_load = np.load('./data/mnist_24680.npy')
+    # mnist_even = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    # mnist_datasets_load = np.load('./data/mnist_135702.npy')
+    # mnist_mix = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    # np.savez_compressed('./data/mnist_3node_datasets', mnist_odd = mnist_odd, mnist_even = mnist_even, mnist_mix = mnist_mix)
+    mnist_datasets_load = np.load('./data/mnist_3node_datasets.npz')
+    mnist_datasets_load_odd = mnist_datasets_load['mnist_odd']
+    mnist_odd = Datasets(train = mnist_datasets_load_odd[0], validation = mnist_datasets_load_odd[1], test = mnist_datasets_load_odd[2])
+    mnist_datasets_load_even = mnist_datasets_load['mnist_even']
+    mnist_even = Datasets(train = mnist_datasets_load_even[0], validation = mnist_datasets_load_even[1], test = mnist_datasets_load_even[2])
+    mnist_datasets_load_mix = mnist_datasets_load['mnist_mix']
+    mnist_mix = Datasets(train = mnist_datasets_load_mix[0], validation = mnist_datasets_load_mix[1], test = mnist_datasets_load_mix[2])
 
 
     train(mnist=mnist, datanode_0 = mnist_odd, datanode_1 = mnist_even, datanode_2 = mnist_mix)
