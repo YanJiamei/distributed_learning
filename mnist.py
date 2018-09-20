@@ -167,23 +167,22 @@ def train(mnist, mnist_datasets):
         # xs, ys = mnist_datasets.train_odd.next_batch(BATCH_SIZE)
         # sess.run(train_step, feed_dict={x: xs, y_: ys})
 
-        #先训练local数据 至收敛
+        #LOAD LOCAL DATA
         xc = mnist_datasets.train_odd.images
         yc = mnist_datasets.train_odd.labels
         wc = np.ones((yc.shape[0],1), dtype='float64') #跟踪每个instance的权重
-        # xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
-        # weights_node = sess.run(weights_node)            
-        # we = weights_node[0] * np.ones((TRANSFER_SIZE, 1), dtype='float64')
-        # # 传输的数据需要乘以权重（通过KL距离来衡量，越大的权重对结果的影响大）加入本地数据集合中
-        # xc = np.vstack((xe,xc))
-        # yc = np.vstack((ye,yc))
-        # wc = np.vstack((we,wc))
+        #SHUFFLE
         perm = np.arange(xc.shape[0])
         np.random.shuffle(perm)
         xc = xc[perm]
         yc = yc[perm]
         wc = wc[perm]
+        #INIT NET_WEIGHT
         weights_node = sess.run(weights_node_init)
+        #INIT TRANSFER DATA POOL
+        xt_pool = np.zeros(shape=(BATCH_SIZE, INPUT_NODE))
+        yt_pool = np.zeros(shape=(BATCH_SIZE, OUTPUT_NODE))
+        #TRAINING BEGINS
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
             if i % 1 == 0:
@@ -200,51 +199,25 @@ def train(mnist, mnist_datasets):
                 print("After %d training step(s), validation accuracy-odd is %g " % (i, validate_acc_odd))
                 validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_even)
                 print("After %d training step(s), validation accuracy-even is %g \n" % (i, validate_acc_odd))
-            # 产生这一轮使用的一个batch的训练数据，并运行训练过程。
-            # xs, ys = mnist.train.next_batch(BATCH_SIZE)
-            # sess.run(train_step, feed_dict={x: xs, y_: ys})
-
-            # 计算权重weights
-            # w = sess.run(weights_node)
-            # xo, yo = mnist_datasets.train_odd.next_batch(w[0])
-            #update weights_node
-            
-            # print('xc-----------\n',xc[0:10])
-            # print('yc-----------\n',yc[0:10])
-            # print('wc-----------\n',wc[0:10])
-            # sess.run(cross_entropy_mean,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]})
-            # print('------------cross_entropy------------\n', sess.run(cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
-            # print('------------weighted_cross_entropy------------\n', sess.run(weighted_cross_entropy,feed_dict={x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]}))
+            # 产生这一轮使用的一个batch的训练数据，并运行训练过程。                 
             local_feed = {
                 x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]
             }
             sess.run(train_step, feed_dict = local_feed)
             
-            # new transfer begins, add instance with weights...
+            # "NEW TRANSFER" begins, add instance with weights to LOCAL DATA SET, add transferred instance without weights to TRANSFER POOL
             xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
             we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
-##=========================================UPDATE WEIGHTS_NODE============================================================            
+            pool_i = i*TRANSFER_SIZE%BATCH_SIZE
+            xt_pool[pool_i:(pool_i+TRANSFER_SIZE)] = xe
+            yt_pool[pool_i:(pool_i+TRANSFER_SIZE)] = ye
+##=========================================UPDATE WEIGHTS_NODE============================================================           
             #待到传输的instance有一个batch之后 对比accuracy再做调整，这期间传输过来的数据不断地在更新训练，weights-node不变
-            if i % 10 == 0:   
-                #update weights_node for next transfer
-                # ...to current local instance lib.
+            if (pool_i == 0) and (i > 0):   
                 # xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
-                # transfer_ac_feed = {
-                #     x: xt,
-                #     y_: yt
-                # }
-                # local_ac_feed = {
-                #     x: xc[BATCH_SIZE:2*BATCH_SIZE], y_: yc[BATCH_SIZE:2*BATCH_SIZE], w: wc[BATCH_SIZE:2*BATCH_SIZE]
-                # }
-                # accuracy_weighted_local = sess.run(accuracy_weighted_norm, feed_dict = local_ac_feed)
-                # accuracy_transfer = sess.run(accuracy, feed_dict = transfer_ac_feed)
-                # exp_ = np.exp(1.0-accuracy_transfer)
-                # weights_node = (accuracy_weighted_local)*exp_
-
-                xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
                 weights_update_feed = {
-                    x_transfer: xt,
-                    y_transfer: yt,
+                    x_transfer: xt_pool,
+                    y_transfer: yt_pool,
                     x :xc[BATCH_SIZE:2*BATCH_SIZE], 
                     y_: yc[BATCH_SIZE:2*BATCH_SIZE], 
                     w: wc[BATCH_SIZE:2*BATCH_SIZE]
