@@ -10,6 +10,7 @@ OUTPUT_NODE = 10
 LAYER1_NODE = 500
 BATCH_SIZE = 100
 WEIGHT_INIT = 1.#初始化所有来源样本的权重
+WEIGHT_THRESHOLD = 1.2 #阻止节点之间的数据传输
 DISTRIBUTE_NODE_NUM = 2 #参与的节点数目
 TRANSFER_SIZE = 10 #相互传输的instance的数目，应该也是可以更改的
 
@@ -29,13 +30,13 @@ def inference(input_tensor, avg_class, weights1, biases1,
     else:
         pass
 
-def train(mnist, mnist_datasets):
+def train(mnist, datanode_0, datanode_1, datanode_2):
 ##=====================Variable Initialization=================================
     #模型输入 shape = [None, Input]其中None表示batch_size大小
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
     w = tf.placeholder(tf.float32, [None, 1], name = 'all-instance-weight-local')
-    #to calculate the loss of a transferred BATCH, then adjust 'weights_node' for network
+    #to calculate the loss of a transferred BATCH, then adjust 'weights_node_1' for network
     x_transfer = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'transfer-x-input')
     y_transfer = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'transfer-y-input')
     #隐藏层参数
@@ -98,7 +99,7 @@ def train(mnist, mnist_datasets):
     #用作validation和test——local
     correct_prediction_float = tf.cast(correct_prediction, tf.float32)
     accuracy = tf.reduce_mean(correct_prediction_float)
-##=======================update weights_node===================================
+##=======================update weights_node_1===================================
     #本地加权accuracy_weighted_norm
     correct_prediction_float_weighted = tf.multiply(tf.transpose(w), correct_prediction_float)
     accuracy_weighted = tf.reduce_sum(correct_prediction_float_weighted)
@@ -127,17 +128,25 @@ def train(mnist, mnist_datasets):
             # x: mnist_datasets.validation_odd.images,
             # y_:  mnist_datasets.validation_odd.labels            
         }
-        validate_feed_odd = {
+        validate_feed_0 = {
             # x: mnist.validation.images,
             # y_: mnist.validation.labels
-            x: mnist_datasets.validation_odd.images,
-            y_:  mnist_datasets.validation_odd.labels            
+            # x: mnist_datasets.validation_odd.images,
+            # y_:  mnist_datasets.validation_odd.labels     
+            x: datanode_0.validation.images,
+            y_: datanode_0.validation.labels       
         }
-        validate_feed_even = {
-            # x: mnist.validation.images,
-            # y_: mnist.validation.labels
-            x: mnist_datasets.validation_even.images,
-            y_:  mnist_datasets.validation_even.labels            
+        validate_feed_1 = {
+            # x: mnist_datasets.validation_even.images,
+            # y_:  mnist_datasets.validation_even.labels     
+            x: datanode_1.validation.images,
+            y_: datanode_1.validation.labels        
+        }
+        validate_feed_2 = {
+            # x: mnist_datasets.validation_even.images,
+            # y_:  mnist_datasets.validation_even.labels     
+            x: datanode_2.validation.images,
+            y_: datanode_2.validation.labels        
         }
         # 准备测试数据。在真实的应用中，这部分数据在训练时是不可见的，这个数据只是作为
         # 模型优劣的最后评价标准。
@@ -148,17 +157,27 @@ def train(mnist, mnist_datasets):
             # x: mnist_datasets.test_odd.images,
             # y_:  mnist_datasets.test_odd.labels
         }
-        test_feed_odd = {
-            # x: mnist.test.images,
-            # y_: mnist.test.labels
-            x: mnist_datasets.test_odd.images,
-            y_:  mnist_datasets.test_odd.labels
+        test_feed_0 = {
+            # x: mnist_datasets.test_odd.images,
+            # y_:  mnist_datasets.test_odd.labels
+            x: datanode_0.test.images,
+            y_: datanode_0.test.labels 
         }
-        test_feed_even = {
+        test_feed_1 = {
             # x: mnist.test.images,
             # y_: mnist.test.labels
-            x: mnist_datasets.test_even.images,
-            y_:  mnist_datasets.test_even.labels
+            # x: mnist_datasets.test_even.images,
+            # y_:  mnist_datasets.test_even.labels
+            x: datanode_1.test.images,
+            y_: datanode_1.test.labels 
+        }
+        test_feed_2 = {
+            # x: mnist.test.images,
+            # y_: mnist.test.labels
+            # x: mnist_datasets.test_even.images,
+            # y_:  mnist_datasets.test_even.labels
+            x: datanode_2.test.images,
+            y_: datanode_2.test.labels 
         }
         # 认真体会这个过程，整个模型的执行流程与逻辑都在这一段
         # 迭代的训练神经网络
@@ -168,8 +187,10 @@ def train(mnist, mnist_datasets):
         # sess.run(train_step, feed_dict={x: xs, y_: ys})
 
         #LOAD LOCAL DATA
-        xc = mnist_datasets.train_odd.images
-        yc = mnist_datasets.train_odd.labels
+        # xc = mnist_datasets.train_odd.images
+        # yc = mnist_datasets.train_odd.labels
+        xc = datanode_0.train.images
+        yc = datanode_0.train.labels
         wc = np.ones((yc.shape[0],1), dtype='float64') #跟踪每个instance的权重
         #SHUFFLE
         perm = np.arange(xc.shape[0])
@@ -178,10 +199,13 @@ def train(mnist, mnist_datasets):
         yc = yc[perm]
         wc = wc[perm]
         #INIT NET_WEIGHT
-        weights_node = sess.run(weights_node_init)
+        weights_node_1 = sess.run(weights_node_init)
+        weights_node_2 = sess.run(weights_node_init)
         #INIT TRANSFER DATA POOL
-        xt_pool = np.zeros(shape=(BATCH_SIZE, INPUT_NODE))
-        yt_pool = np.zeros(shape=(BATCH_SIZE, OUTPUT_NODE))
+        xt_pool_1 = np.zeros(shape=(BATCH_SIZE, INPUT_NODE))
+        yt_pool_1 = np.zeros(shape=(BATCH_SIZE, OUTPUT_NODE))
+        xt_pool_2 = np.zeros(shape=(BATCH_SIZE, INPUT_NODE))
+        yt_pool_2 = np.zeros(shape=(BATCH_SIZE, OUTPUT_NODE))
         #TRAINING BEGINS
         for i in range(TRAINING_STEPS):
             # 每1000轮输出一次在验证数据集上的测试结果
@@ -191,13 +215,13 @@ def train(mnist, mnist_datasets):
                 # 小的batch。当神经网络模型比较复杂或者验证数据比较大时，太大的batch
                 # 会导致计算时间过长甚至发生内存溢出的错误。
                 # 注意我们用的是滑动平均之后的模型来跑我们验证集的accuracy
-                print("===============TRANSFER WEIGHT: %f ================ \n" % weights_node)
+                print("===============TRANSFER WEIGHT: w1 = %f , w2 = %f================ \n" % (weights_node_1, weights_node_2))
 
                 validate_acc = sess.run(accuracy, feed_dict=validate_feed)
                 print("After %d training step(s), validation accuracy-all is %g " % (i, validate_acc))
-                validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_odd)
+                validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_0)
                 print("After %d training step(s), validation accuracy-odd is %g " % (i, validate_acc_odd))
-                validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_even)
+                validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_1)
                 print("After %d training step(s), validation accuracy-even is %g \n" % (i, validate_acc_odd))
             # 产生这一轮使用的一个batch的训练数据，并运行训练过程。                 
             local_feed = {
@@ -205,28 +229,49 @@ def train(mnist, mnist_datasets):
             }
             sess.run(train_step, feed_dict = local_feed)
             
-            # "NEW TRANSFER" begins, add instance with weights to LOCAL DATA SET, add transferred instance without weights to TRANSFER POOL
-            xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
-            we = weights_node * np.ones((TRANSFER_SIZE, 1), dtype='float64')
+## "NEW TRANSFER" begins, add instance with weights to LOCAL DATA SET, add transferred instance without weights to TRANSFER POOL
+            # xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
+            xe, ye = datanode_1.train.next_batch(TRANSFER_SIZE)
+            we = weights_node_1 * np.ones((TRANSFER_SIZE, 1), dtype='float64')
             pool_i = i*TRANSFER_SIZE%BATCH_SIZE
-            xt_pool[pool_i:(pool_i+TRANSFER_SIZE)] = xe
-            yt_pool[pool_i:(pool_i+TRANSFER_SIZE)] = ye
-##=========================================UPDATE WEIGHTS_NODE============================================================           
+            xt_pool_1[pool_i:(pool_i+TRANSFER_SIZE)] = xe
+            yt_pool_1[pool_i:(pool_i+TRANSFER_SIZE)] = ye
+
+            xo, yo = datanode_2.train.next_batch(TRANSFER_SIZE)
+            wo = weights_node_2 * np.ones((TRANSFER_SIZE, 1), dtype='float64')
+            pool_i = i*TRANSFER_SIZE%BATCH_SIZE
+            xt_pool_2[pool_i:(pool_i+TRANSFER_SIZE)] = xo
+            yt_pool_2[pool_i:(pool_i+TRANSFER_SIZE)] = yo
+##=========================================UPDATE weights_node_i============================================================           
             #待到传输的instance有一个batch之后 对比accuracy再做调整，这期间传输过来的数据不断地在更新训练，weights-node不变
             if (pool_i == 0) and (i > 0):   
                 # xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
-                weights_update_feed = {
-                    x_transfer: xt_pool,
-                    y_transfer: yt_pool,
+                weights_update_feed_1 = {
+                    x_transfer: xt_pool_1,
+                    y_transfer: yt_pool_1,
                     x :xc[BATCH_SIZE:2*BATCH_SIZE], 
                     y_: yc[BATCH_SIZE:2*BATCH_SIZE], 
                     w: wc[BATCH_SIZE:2*BATCH_SIZE]
                 }
-                weights_node = sess.run(weights_node_update, feed_dict=weights_update_feed )
+                weights_update_feed_2 = {
+                    x_transfer: xt_pool_2,
+                    y_transfer: yt_pool_2,
+                    x :xc[BATCH_SIZE:2*BATCH_SIZE], 
+                    y_: yc[BATCH_SIZE:2*BATCH_SIZE], 
+                    w: wc[BATCH_SIZE:2*BATCH_SIZE]
+                }
+                weights_node_1 = sess.run(weights_node_update, feed_dict=weights_update_feed_1 )
+                weights_node_2 = sess.run(weights_node_update, feed_dict=weights_update_feed_2 )
 ##=========================================RECEIVE & SHUFFLE ALL DATA======================================================
-            xc = np.vstack((xe,xc))
-            yc = np.vstack((ye,yc))
-            wc = np.vstack((we,wc))
+            if weights_node_1 > WEIGHT_THRESHOLD:
+                xc = np.vstack((xe,xc))
+                yc = np.vstack((ye,yc))
+                wc = np.vstack((we,wc))
+            if weights_node_2 > WEIGHT_THRESHOLD:
+                xc = np.vstack((xo,xc))
+                yc = np.vstack((yo,yc))
+                wc = np.vstack((wo,wc))
+
             perm = np.arange(xc.shape[0])
             np.random.shuffle(perm)
             xc = xc[perm]
@@ -238,14 +283,13 @@ def train(mnist, mnist_datasets):
         # 的调用就可以看出来了，因为accuracy只与average_y有关
         test_acc = sess.run(accuracy, feed_dict=test_feed)
         print("After %d training step(s), test accuracy-all is %g" % (TRAINING_STEPS, test_acc))
-        test_acc_odd = sess.run(accuracy,feed_dict=test_feed_odd)
+        test_acc_odd = sess.run(accuracy,feed_dict=test_feed_0)
         print("After %d training step(s), test accuracy-odd is %g" % (TRAINING_STEPS, test_acc_odd))
-        test_acc_odd = sess.run(accuracy,feed_dict=test_feed_even)
+        test_acc_odd = sess.run(accuracy,feed_dict=test_feed_1)
         print("After %d training step(s), test accuracy-even is %g\n=============================================================\n" % (TRAINING_STEPS, test_acc_odd))
 
 # 主程序入口
-Datasets = collections.namedtuple('Datasets', ['train_odd', 'train_even'
-                                    , 'test_odd', 'test_even', 'validation_odd', 'validation_even'])
+Datasets = collections.namedtuple('Datasets', ['train', 'validation', 'test'])
 def main(argv=None):
     # 声明处理MNIST数据集的类，这个类在初始化时会自动下载数据。
     mnist = input_data.read_data_sets("./data", one_hot=True)
@@ -254,12 +298,22 @@ def main(argv=None):
     # mnist_24680_train = extract_n_data_sets(mnist.test,label=[2,4,6,8,0])
     # mnist_13579_validation = extract_n_data_sets(mnist.validation, label=[1,3,5,7,9])
     # mnist_13579_test = extract_n_data_sets(mnist.validation, label=[1,3,5,7,9])
-    mnist_datasets_load = np.load('./data/mnist_datasets.npy')
-    mnist_datasets = Datasets(train_odd = mnist_datasets_load[0], train_even = mnist_datasets_load[1]
-                                    , validation_odd = mnist_datasets_load[2], validation_even = mnist_datasets_load[3]
-                                    , test_odd = mnist_datasets_load[4], test_even = mnist_datasets_load[5])
+
+    # mnist_datasets_load = np.load('./data/mnist_datasets.npy')
+    # mnist_datasets = Datasets(train_odd = mnist_datasets_load[0], train_even = mnist_datasets_load[1]
+    #                                 , validation_odd = mnist_datasets_load[2], validation_even = mnist_datasets_load[3]
+    #                                 , test_odd = mnist_datasets_load[4], test_even = mnist_datasets_load[5])
     
-    train(mnist=mnist, mnist_datasets=mnist_datasets)
+    mnist_datasets_load = np.load('./data/mnist_13579.npy')
+    mnist_odd = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    mnist_datasets_load = np.load('./data/mnist_24680.npy')
+    mnist_even = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    mnist_datasets_load = np.load('./data/mnist_135702.npy')
+    mnist_mix = Datasets(train = mnist_datasets_load[0], validation = mnist_datasets_load[1], test = mnist_datasets_load[2])
+    
+
+
+    train(mnist=mnist, datanode_0 = mnist_odd, datanode_1 = mnist_even, datanode_2 = mnist_mix)
     
 # TensorFlow提供的一个主程序入口，tf.app.run会调用上面定义的main函数
 if __name__ == "__main__":
