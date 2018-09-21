@@ -224,11 +224,12 @@ def train(mnist, datanode_0, datanode_1, datanode_2):
                 validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_1)
                 print("After %d training step(s), validation accuracy-even is %g \n" % (i, validate_acc_odd))
             # 产生这一轮使用的一个batch的训练数据，并运行训练过程。                 
-            local_feed = {
+            local_feed_0 = {
                 x: xc[0:BATCH_SIZE], y_: yc[0:BATCH_SIZE], w: wc[0:BATCH_SIZE]
             }
-            sess.run(train_step, feed_dict = local_feed)
+            sess.run(train_step, feed_dict = local_feed_0)
             
+
 ## "NEW TRANSFER" begins, add instance with weights to LOCAL DATA SET, add transferred instance without weights to TRANSFER POOL
             # xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
             xe, ye = datanode_1.train.next_batch(TRANSFER_SIZE)
