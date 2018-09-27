@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.contrib.learn.python.learn.datasets import mnist as MDataset
 import numpy as np
+import pandas as pd
 from tensorflow.python.framework import dtypes
 import collections
 INPUT_NODE = 784
@@ -20,11 +21,21 @@ REGULARIZATION_RATE = 0.0001
 TRAINING_STEPS = 1000
 MOVING_AVERAGE_DECAY = 0.99
 
-def extract_Dataset(datas,weights,labels):
-    dataset = tf.data.Dataset.from_tensor_slices(({'x':datas,'w':weights},labels))
-    dataset.shuffle(30000)
-    return dataset
+# def extract_Dataset(datas,weights,labels):
+#     dataset = tf.data.Dataset.from_tensor_slices((datas,weights,labels))
+#     dataset.shuffle(1000)
+#     return dataset
 Datasets = collections.namedtuple('Datasets', ['train', 'validation', 'test'])
+
+def extract_DF(datas,labels,weights):
+    data = pd.DataFrame(datas)
+    label = pd.DataFrame(labels)
+    weight = pd.DataFrame(weights)
+    frames = [data,label,weight]
+    df = pd.concat(frames,axis=1,ignore_index=True)
+    return df
+    
+
 def load_data():
     mnist_datasets_load = np.load('./data/mnist_3node_datasets.npz') 
     mnist_datasets_load_even = mnist_datasets_load['mnist_even']
@@ -35,24 +46,18 @@ def load_data():
     mnist_mix = Datasets(train = mnist_datasets_load_mix[0], validation = mnist_datasets_load_mix[1], test = mnist_datasets_load_mix[2])
     # weight = np.ones(shape = [train_labels.shape[0],],dtype=np.float32)
 
-    mnist_odd_dataset = extract_Dataset(mnist_odd.train.images,
+    mnist_odd_dataset = extract_DF(datas=mnist_odd.train.images,
         weights = np.ones(shape = [mnist_odd.train.images.shape[0],],dtype=np.float32),
         labels = mnist_odd.train.labels )
-    mnist_even_dataset = extract_Dataset(mnist_even.train.images,
+    mnist_even_dataset = extract_DF(datas=mnist_even.train.images,
         weights = np.ones(shape = [mnist_even.train.images.shape[0],],dtype=np.float32),
         labels = mnist_even.train.labels )
-    mnist_mix_dataset = extract_Dataset(mnist_mix.train.images,
+    mnist_mix_dataset = extract_DF(datas=mnist_mix.train.images,
         weights = np.ones(shape = [mnist_mix.train.images.shape[0],],dtype=np.float32),
         labels = mnist_mix.train.labels )
     return mnist_odd_dataset, mnist_even_dataset, mnist_mix_dataset
 
-datset_0, dataset_1, dataset_2 = load_data()
-datset_0.batch(batch_size = BATCH_SIZE)
-datset_0_iterator = datset_0.make_one_shot_iterator()
-dataset_1.batch(batch_size = TRANSFER_SIZE)
-dataset_1_iterator = dataset_1.make_one_shot_iterator()
-dataset_2.batch(batch_size = TRANSFER_SIZE)
-dataset_2_iterator = dataset_2.make_one_shot_iterator()
+
 def inference(input_tensor, avg_class, weights1, biases1,
                 weights2, biases2):
     if (avg_class == None):
@@ -65,16 +70,13 @@ g0 = tf.Graph()
 with g0.as_default():
  ##=====================Variable Initialization=================================
     #模型输入 shape = [None, Input]其中None表示batch_size大小
-    # x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
-    # y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
-    # w = tf.placeholder(tf.float32, [None, 1], name = 'all-instance-weight-local')
-    features_x_w, labels_y = datset_0_iterator.get_next()
-    x = features_x_w['x']
-    w = features_x_w['w']
-    y = labels_y
+    x = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'x-input')
+    y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y-input')
+    w = tf.placeholder(tf.float32, [None, ], name = 'all-instance-weight-local')
     #to calculate the loss of a transferred BATCH, then adjust 'weights_node_1' for network
     x_transfer = tf.placeholder(tf.float32, [None, INPUT_NODE], name = 'transfer-x-input')
     y_transfer = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'transfer-y-input')
+
     #隐藏层参数
     weights1 = tf.Variable(
         tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev = 0.1) #初始化
@@ -110,7 +112,7 @@ with g0.as_default():
         logits = y, labels = tf.argmax(y_,1)
     )
     #给instance加权
-    weighted_cross_entropy = tf.multiply(cross_entropy, tf.transpose(w))
+    weighted_cross_entropy = tf.multiply(cross_entropy, w)
     cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)
     #L2正则化损失
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
@@ -138,7 +140,7 @@ with g0.as_default():
     accuracy = tf.reduce_mean(correct_prediction_float)
  ##=======================update weights_node_1===================================
     #本地加权accuracy_weighted_norm
-    correct_prediction_float_weighted = tf.multiply(tf.transpose(w), correct_prediction_float)
+    correct_prediction_float_weighted = tf.multiply(w, correct_prediction_float)
     accuracy_weighted = tf.reduce_sum(correct_prediction_float_weighted)
     accuracy_weighted_norm = tf.divide(accuracy_weighted, tf.reduce_sum(w))
     #传输进来的一个batch的accuracy_transfer_batch
@@ -154,66 +156,72 @@ with g0.as_default():
     # loss_partition = 
 with tf.Session(graph = g0) as sess:
     # 初始化变量
-    init_op = tf.initialize_all_variables()
-    sess.run(init_op)
+    
     # 准备验证数据。一般在神经网络的训练过程中会通过验证数据要大致判断停止的
     # 条件和评判训练的效果。
-    
+    dataset_0, dataset_1, dataset_2 = load_data()
 
     #INIT NET_WEIGHT
+    init_op = tf.initialize_all_variables()
+    sess.run(init_op)
     weights_node_1 = sess.run(weights_node_init)
     weights_node_2 = sess.run(weights_node_init)
 
-
-    #TRAINING BEGINS
     for i in range(TRAINING_STEPS):
-        # 每1000轮输出一次在验证数据集上的测试结果
-        
-        # 产生这一轮使用的一个batch的训练数据，并运行训练过程。                  
-        features, labels = datset_0_iterator.get_next()
+        #sample and feed training
+        feed = dataset_0.sample(n=BATCH_SIZE)
         local_feed_0 = {
-            x: features['x'], y_: labels, w:features['w']
+            x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
+            y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+            w: feed.iloc[:, INPUT_NODE+10].as_matrix()
         }
-        sess.run(train_step, feed_dict = local_feed_0)
-            
+
+        sess.run(train_step, feed_dict=local_feed_0)
+        print(i)
+
+
 
 ## "NEW TRANSFER" begins, add instance with weights to LOCAL DATA SET, add transferred instance without weights to TRANSFER POOL
             # xe, ye = mnist_datasets.train_even.next_batch(TRANSFER_SIZE)
-        transfer_1_features, transfer_1_labels = dataset_1_iterator.get_next()
+        transfer_1_=dataset_1.sample(n=BATCH_SIZE)
+        transfer_2_=dataset_2.sample(n=BATCH_SIZE)
         # pool_1 = pool_1.concatenate(transfer_1)
 
-        transfer_2_features, transfer_2_labels = dataset_2_iterator.get_next()
+        # transfer_2_features, transfer_2_labels = dataset_2_iterator.get_next()
         # pool_1 = pool_1.concatenate(transfer_1)
 ##=========================================UPDATE weights_node_i============================================================           
             #待到传输的instance有一个batch之后 对比accuracy再做调整，这期间传输过来的数据不断地在更新训练，weights-node不变
         # if (pool_i == 0) and (i > 0):   
             # xt, yt = mnist_datasets.train_even.next_batch(BATCH_SIZE)
-        features, labels = datset_0_iterator.get_next()
+        local_0_ = dataset_0.sample(n=BATCH_SIZE)
         weights_update_feed_1 = {
-            x_transfer: transfer_1_features['x'],
-            y_transfer: transfer_1_labels,
-            x :features['x'], 
-            y_:labels, 
-            w: features['w']
+            x_transfer: transfer_1_.iloc[:,range(INPUT_NODE)].as_matrix(),
+            y_transfer: transfer_1_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
+            x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
+            y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+            w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
         }
         weights_update_feed_2 = {
-            x_transfer: transfer_2_features['x'],
-            y_transfer: transfer_2_labels,
-            x :features['x'], 
-            y_:labels, 
-            w: features['w']
+            x_transfer: transfer_2_.iloc[:,range(INPUT_NODE)].as_matrix(),
+            y_transfer: transfer_2_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
+            x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
+            y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+            w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
         }
         weights_node_1 = sess.run(weights_node_update, feed_dict=weights_update_feed_1 )
         weights_node_2 = sess.run(weights_node_update, feed_dict=weights_update_feed_2 )
-        weightset_1 = extract_Dataset(transfer_1_features['x'],weights_node_1,transfer_1_labels)
-        weightset_2 = extract_Dataset(transfer_2_features['x'],weights_node_2,transfer_2_labels)
+        #更新传送过来的batch中的weights
+        transfer_1_.iloc[:, INPUT_NODE+10] = weights_node_1
+        transfer_2_.iloc[:, INPUT_NODE+10] = weights_node_2
+        # weights_frame_1 = pd.DataFrame(weights_node_1)
+        # weights_frame_2 = pd.DataFrame(weights_node_2)
+        # weightset_1 = pd.concat([transfer_1_.iloc[:,range(INPUT_NODE+10)], weights_frame_1],axis=1,ignore_index=True)
+        # weightset_2 = pd.concat([transfer_2_.iloc[:,range(INPUT_NODE+10)], weights_frame_2],axis=1,ignore_index=True)
 ##=========================================RECEIVE & SHUFFLE ALL DATA======================================================
         if weights_node_1 > WEIGHT_THRESHOLD:
-            dataset_0 = dataset_0.concatenate(weightset_1)
+            dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
         if weights_node_2 > WEIGHT_THRESHOLD:
-            dataset_0 = dataset_0.concatenate(weightset_2)
-        if (weights_node_1 > WEIGHT_THRESHOLD) or (weights_node_2 > WEIGHT_THRESHOLD):
-            dataset_0.shuffle(3000)
+            dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
 
         if i % 1 == 0:
             # 计算滑动平均模型在验证数据上的结果。因为MNIST数据集比较小，所以一次
@@ -224,7 +232,7 @@ with tf.Session(graph = g0) as sess:
             print("===============TRANSFER WEIGHT: w1 = %f , w2 = %f================ \n" % (weights_node_1, weights_node_2))
 
             validate_acc = sess.run(accuracy, feed_dict=local_feed_0)
-            print("After %d training step(s), validation accuracy-all is %g " % (i, validate_acc))
+            print("After %d training step(s), local accuracy is %g " % (i, validate_acc))
             # validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_0)
             # print("After %d training step(s), validation accuracy-odd is %g " % (i, validate_acc_odd))
             # validate_acc_odd = sess.run(accuracy, feed_dict = validate_feed_1)
