@@ -8,13 +8,18 @@ BATCH_SIZE = 100
 WEIGHT_INIT = 1.#初始化所有来源样本的权重
 WEIGHT_THRESHOLD = 1.0 #阻止节点之间的数据传输
 DISTRIBUTE_NODE_NUM = 2 #参与的节点数目
-TRANSFER_FRE = 10000 #相互传输的instance的频率，应该也是可以更改的
+TRANSFER_FRE = 100 #相互传输的instance的频率，应该也是可以更改的
 
 LEARNING_RATE_BASE = 0.8
 LEARNING_RATE_DECAY = 0.99
 REGULARIZATION_RATE = 0.0001
-TRAINING_STEPS = 1000
+TRAINING_STEPS = 10000
 MOVING_AVERAGE_DECAY = 0.99
+
+log_dir='./logs/T1.2/Model/'
+log_dir1='./logs/T1.2/Model1/'
+log_dir2='./logs/T1.2/Model2/'
+log_tst ='./logs/T1.2/Test/'
 def lazy_property(function):
     attribute = '_cache_' + function.__name__
 
@@ -48,6 +53,8 @@ class Model:
         self.accuracy
         self.loss
         self.weights_node_update
+        self.transfer_weight_1
+        self.transfer_weight_2
 
         self.scalar_acc
         self.scalar_weight_1
@@ -106,7 +113,7 @@ class Model:
 
     @lazy_property
     def global_step(self):
-        return tf.Variable(0, trainable=False)
+        return tf.Variable(0, trainable=True)
     @lazy_property
     def cross_entropy_mean(self):
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -136,8 +143,7 @@ class Model:
     @lazy_property    
     def train_step(self):
         train_step = tf.train.GradientDescentOptimizer(self.learning_rate).minimize(self.loss
-                        , global_step=self.global_step
-                        , var_list=[self.weights1, self.biases1, self.weights2, self.biases2])
+                        , global_step=self.global_step)
         return train_step
     @lazy_property
     def correct_prediction_float(self):
@@ -215,6 +221,48 @@ class Model:
     #     mistakes = tf.not_equal(
     #         tf.argmax(self.target, 1), tf.argmax(self.prediction, 1))
     #     return tf.reduce_mean(tf.cast(mistakes, tf.float32))
+class ArgmaxModel:
+
+    def __init__(self):
+        self.graph = tf.Graph()
+        self.y_test
+        self.y1
+        self.y2
+        self.y3
+        self.argmax
+        self.correct_prediction
+        self.accuracy
+        self.scalar_acc
+    @lazy_property
+    def y1(self):
+        return tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y1-input')
+
+    @lazy_property
+    def y2(self):
+        return tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y2-input')
+
+    @lazy_property
+    def y3(self):
+        return tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'y3-input')
+
+    @lazy_property
+    def y_test(self):
+        return tf.placeholder(tf.float32, [None, OUTPUT_NODE], name = 'test-input')
+    @lazy_property
+    def argmax(self):
+        prediction_prob_sum = self.y1 + self.y2 + self.y3
+        return tf.arg_max(input=prediction_prob_sum, dimension=1)
+    @lazy_property
+    def correct_prediction(self):
+        equal_num = tf.equal(tf.argmax(self.y_test, 1), self.argmax)
+        return tf.cast(equal_num, tf.float32)
+    @lazy_property
+    def accuracy(self):
+        return tf.reduce_mean(self.correct_prediction)
+    @lazy_property
+    def scalar_acc(self):
+        return tf.summary.scalar('total_acc', self.accuracy)
+
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.contrib.learn.python.learn.datasets import mnist as MDataset
 import numpy as np
@@ -262,100 +310,180 @@ def load_data():
 
 
 
-
+dataset_0, dataset_1, dataset_2, test_data, train_all = load_data()
 M = Model()
 M1 = Model()
 M2 = Model()
+T = ArgmaxModel()
 sess = tf.Session(graph=M.graph)
 sess1 = tf.Session(graph=M1.graph)
 sess2 = tf.Session(graph=M2.graph)
-log_dir='./logs/Model/'
-log_dir1='./logs/Model1/'
-log_dir2='./logs/Model2/'
+sess_tst = tf.Session(graph=T.graph)
 
 writer = tf.summary.FileWriter(logdir = log_dir, graph = M.graph)
 writer1 = tf.summary.FileWriter(logdir = log_dir1, graph = M1.graph)
 writer2 = tf.summary.FileWriter(logdir = log_dir2, graph = M2.graph)
+writer_tst = tf.summary.FileWriter(logdir = log_tst, graph = T.graph)
 sess.run(M.init_op)
 sess1.run(M1.init_op)
 sess2.run(M2.init_op)
-dataset_0, dataset_1, dataset_2, test_data, train_all = load_data()
-def transfer(dataset_0 , dataset_1 , dataset_2 
-            , transfer_1_ , transfer_2_ ):
 
+def transfer(Graph, writer, session, 
+                dataset_0,
+                dataset_1, dataset_2):
+    global_step = session.run(Graph.global_step)
     transfer_1_=dataset_1.sample(n=BATCH_SIZE)
     transfer_2_=dataset_2.sample(n=BATCH_SIZE)
-    
-    #keep weight = 1.0
-    # dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
-    # dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
-    
-##=========================================UPDATE weights_node_i============================================================           
     local_0_ = dataset_0.sample(n=BATCH_SIZE)
+
     weights_update_feed_1 = {
-        x_transfer: transfer_1_.iloc[:,range(INPUT_NODE)].as_matrix(),
-        y_transfer: transfer_1_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
-        x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
-        w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
+        Graph.x_transfer: transfer_1_.iloc[:,range(INPUT_NODE)].as_matrix(),
+        Graph.y_transfer: transfer_1_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
+        Graph.x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
+        Graph.y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+        Graph.w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
     }
     weights_update_feed_2 = {
-        x_transfer: transfer_2_.iloc[:,range(INPUT_NODE)].as_matrix(),
-        y_transfer: transfer_2_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
-        x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
-        w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
+        Graph.x_transfer: transfer_2_.iloc[:,range(INPUT_NODE)].as_matrix(),
+        Graph.y_transfer: transfer_2_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(),
+        Graph.x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
+        Graph.y_:local_0_.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+        Graph.w: local_0_.iloc[:, INPUT_NODE+10].as_matrix()
     }
-    scalar_weight_1, weights_node_1 = sess.run([scalar_weight_1_sum, transfer_weight_1], feed_dict=weights_update_feed_1 )
-    scalar_weight_2, weights_node_2 = sess.run([scalar_weight_2_sum, transfer_weight_2], feed_dict=weights_update_feed_2 )
-    return scalar_weight_1, weights_node_1, scalar_weight_2, weights_node_2
-for i in range(TRAINING_STEPS):
-    #sample and feed training
-    feed = dataset_0.sample(n=BATCH_SIZE)
+    scalar_weight_1, weights_node_1 = session.run([Graph.scalar_weight_1, Graph.transfer_weight_1], feed_dict=weights_update_feed_1 )
+    scalar_weight_2, weights_node_2 = session.run([Graph.scalar_weight_2, Graph.transfer_weight_2], feed_dict=weights_update_feed_2 )
+    writer.add_summary(scalar_weight_1,global_step)
+    writer.add_summary(scalar_weight_2,global_step)
+    #更新传送过来的batch中的weights
+    transfer_1_.iloc[:, INPUT_NODE+10] = weights_node_1
+    transfer_2_.iloc[:, INPUT_NODE+10] = weights_node_2
+    return weights_node_1, weights_node_2, transfer_1_, transfer_2_
+
+def feed(Graph, dataset, batch_size = BATCH_SIZE):
+    feed = dataset.sample(n=batch_size)
     # feed = train_all.sample(n=BATCH_SIZE)
     local_feed_0 = {
-        M.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        M.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
-        M.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
+        Graph.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
+        Graph.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+        Graph.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
     }
-
+    return local_feed_0
+def test_feed(y1,y2,y3,Graph,feed_data):
+    pass
+# def train(Graph, local_set, session, )
+for i in range(TRAINING_STEPS):
+  ##=====================sample and feed training==========================
+    # feed = dataset_0.sample(n=BATCH_SIZE)
+    # # feed = train_all.sample(n=BATCH_SIZE)
+    # local_feed_0 = {
+    #     M.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
+    #     M.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+    #     M.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
+    # }
+    local_feed_0 = feed(Graph = M, dataset = dataset_0)
     scalar_loss, _ = sess.run([M.scalar_loss, M.train_step], feed_dict=local_feed_0)
     writer.add_summary(scalar_loss,i)
 
-    feed = dataset_1.sample(n=BATCH_SIZE)
-    # feed = train_all.sample(n=BATCH_SIZE)
-    local_feed_1 = {
-        M1.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        M1.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
-        M1.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
-    }
-
-    scalar_loss1, _ = sess.run([M1.scalar_loss, M1.train_step], feed_dict=local_feed_1)
+    # feed = dataset_1.sample(n=BATCH_SIZE)
+    # # feed = train_all.sample(n=BATCH_SIZE)
+    # local_feed_1 = {
+    #     M1.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
+    #     M1.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+    #     M1.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
+    # }
+    local_feed_1 = feed(Graph = M1, dataset = dataset_1)
+    scalar_loss1, _ = sess1.run([M1.scalar_loss, M1.train_step], feed_dict=local_feed_1)
     writer1.add_summary(scalar_loss1,i)
 
-    feed = dataset_2.sample(n=BATCH_SIZE)
-    # feed = train_all.sample(n=BATCH_SIZE)
-    local_feed_2 = {
-        M2.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        M2.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
-        M2.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
-    }
-
-    scalar_loss2, _ = sess.run([M2.scalar_loss, M2.train_step], feed_dict=local_feed_2)
+    # feed = dataset_2.sample(n=BATCH_SIZE)
+    # # feed = train_all.sample(n=BATCH_SIZE)
+    # local_feed_2 = {
+    #     M2.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
+    #     M2.y_: feed.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix(), 
+    #     M2.w: feed.iloc[:, INPUT_NODE+10].as_matrix()
+    # }
+    local_feed_2 = feed(Graph = M2, dataset = dataset_2)
+    scalar_loss2, _ = sess2.run([M2.scalar_loss, M2.train_step], feed_dict=local_feed_2)
     writer2.add_summary(scalar_loss2,i)
     print(i)
-    if i%TRANSFER_FRE == 0:
-        scalar_weight_1, weights_node_1, scalar_weight_2, weights_node_2 = transfer(dataset_0 = dataset_0, dataset_1 = dataset_1, dataset_2 = dataset_2
-            , transfer_1_ = transfer_1_, transfer_2_ = transfer_2_)
-        writer.add_summary(scalar_weight_1,i)
-        writer.add_summary(scalar_weight_2,i)
-        #更新传送过来的batch中的weights
-        transfer_1_.iloc[:, INPUT_NODE+10] = weights_node_1
-        transfer_2_.iloc[:, INPUT_NODE+10] = weights_node_2
-    ##=========================================RECEIVE & SHUFFLE ALL DATA======================================================
+  ##=====================ACCURACY==========================
+    local_feed_0 = feed(Graph = M, dataset = test_data)
+    scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
+    writer.add_summary(scalar_acc, i)
+
+    local_feed_0 = feed(Graph = M1, dataset = test_data)
+    scalar_acc, validate_acc = sess1.run([M1.scalar_acc, M1.accuracy], feed_dict=local_feed_0)
+    writer1.add_summary(scalar_acc, i)
+
+    local_feed_0 = feed(Graph = M2, dataset = test_data)
+    scalar_acc, validate_acc = sess2.run([M2.scalar_acc, M2.accuracy], feed_dict=local_feed_0)
+    writer2.add_summary(scalar_acc, i)
+  ##=====================SUM ACC=============================
+    feed_data = test_data.sample(n = BATCH_SIZE)
+    feed_x = feed_data.iloc[:,range(INPUT_NODE)].as_matrix()
+    feed_y_ = feed_data.iloc[:,range(INPUT_NODE, INPUT_NODE+10)].as_matrix()
+    y0 = sess.run(M.y, feed_dict={M.x: feed_x})
+    y1 = sess1.run(M1.y, feed_dict={M1.x: feed_x})
+    y2 = sess2.run(M2.y, feed_dict={M2.x: feed_x})
+    feed_test = {
+        T.y1 : y0,
+        T.y2 : y1,
+        T.y3 : y2,
+        T.y_test : feed_y_
+    }
+    scalar_acc_tst, tst_acc = sess_tst.run([T.scalar_acc, T.accuracy], feed_dict = feed_test)
+    writer_tst.add_summary(scalar_acc_tst, i)
+    print('test acc = ', tst_acc)
+  ##=====================TRANSFER & UPDATE==========================
+    if i%TRANSFER_FRE == 0 and i>=1 :
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M, writer = writer, session = sess, 
+                                dataset_0 = dataset_0,
+                                dataset_1 = dataset_1, dataset_2 = dataset_2)
         if weights_node_1 > WEIGHT_THRESHOLD:
             dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
         if weights_node_2 > WEIGHT_THRESHOLD:
             dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M1, writer = writer1, session = sess1, 
+                                dataset_0 = dataset_1,
+                                dataset_1 = dataset_0, dataset_2 = dataset_2)
+        if weights_node_1 > WEIGHT_THRESHOLD:
+            dataset_1 = pd.concat([dataset_1, transfer_1_], axis=0, ignore_index=True)
+        if weights_node_2 > WEIGHT_THRESHOLD:
+            dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M2, writer = writer2, session = sess2, 
+                                dataset_0 = dataset_2,
+                                dataset_1 = dataset_0, dataset_2 = dataset_1)
+        if weights_node_1 > WEIGHT_THRESHOLD:
+            dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+        if weights_node_2 > WEIGHT_THRESHOLD:
+            dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
+
         
+
+
+
+      ##================================CONTINUE TRANSFER WEIGHTS = 1 THRE=0==============
+        # WEIGHT_THRESHOLD = 0
+        # transfer_0_=dataset_0.sample(n=BATCH_SIZE)
+        # transfer_1_=dataset_1.sample(n=BATCH_SIZE)
+        # transfer_2_=dataset_2.sample(n=BATCH_SIZE)
+        # dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
+        # dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
+        # dataset_1 = pd.concat([dataset_1, transfer_0_], axis=0, ignore_index=True)
+        # dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
+        # dataset_2 = pd.concat([dataset_2, transfer_0_], axis=0, ignore_index=True)
+        # dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+
+
+
 writer.close()
+writer1.close()
+writer2.close()
+writer_tst.close()
+sess.close()
+sess1.close()
+sess2.close()
+sess_tst.close()
