@@ -50,27 +50,31 @@ def data_construct(label, num, size = FEATURE_SIZE, gmm_size = GMM_COMPONENT):
     # plt.scatter(a,b)
     # plt.show()
     dataframe = pd.DataFrame(data = x)
-    new_col = feature_name(label)
-    dataframe.columns = new_col
+    temp = pd.DataFrame([label for i in range(num)])
+    dataframe['label'] = temp
+    # new_col = feature_name(label)
+    # dataframe.columns = new_col
+    # dataframe = pd.concat((dataframe,label),axis=1)
     return dataframe
 
 
 
 dataframe_A = data_construct(label = 'A', num = DATA_NUM)
 dataframe_B = data_construct(label = 'B', num = DATA_NUM)
-dataframe = pd.concat((dataframe_A,dataframe_B),axis=1)
-dataframe.to_csv('./GMM_data/G_3M_4M_10000.csv')
+dataframe = pd.concat((dataframe_A,dataframe_B),axis=0,ignore_index=True)
+dataframe.to_csv('./GMM_model/GMM_data/G_3M_4M_10000.csv')
 print(dataframe)
 # print(dataframe)
-x = np.array(dataframe['B_0'])
-y = np.array(dataframe['B_1'])
-z = np.array(dataframe['B_2'])
+## show 3D dots
+x = np.array(dataframe.loc[dataframe.label=='B',0])
+y = np.array(dataframe.loc[dataframe.label=='B',1])
+z = np.array(dataframe.loc[dataframe.label=='B',2])
 fig = plt.figure()
 ax = fig.gca(projection='3d')
 ax.scatter(x, y, z, s=20, c='r', depthshade=True)
-ax.legend()
-x = np.array(dataframe['A_0'])
-y = np.array(dataframe['A_1'])
-z = np.array(dataframe['A_2'])
+# ax.legend()
+x = np.array(dataframe.loc[dataframe.label=='A',0])
+y = np.array(dataframe.loc[dataframe.label=='A',1])
+z = np.array(dataframe.loc[dataframe.label=='A',2])
 ax.scatter(x, y, z, s=20, c='b', depthshade=True)
 plt.show()
