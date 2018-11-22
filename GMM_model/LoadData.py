@@ -2,29 +2,59 @@ import pandas as pd
 import graphmodel as model
 import tensorflow as tf
 import numpy as np
-GMM_data = pd.read_csv('./GMM_model/GMM_data/G_3M_4M_10000.csv', index_col=0)
-print(GMM_data['0'])
+dataframe = pd.read_csv('./GMM_model/GMM_data/G_10M_4M_100000.csv', index_col=0)
+# print(GMM_data['0'])
+train_data = dataframe.sample(frac=0.5)
+test_data = dataframe.sample(frac=0.5)
 dataset = tf.data.Dataset.from_tensor_slices(
     (
         {
-            '0': np.array(GMM_data['0']),
-            '1': np.array(GMM_data['1']),
-            '2': np.array(GMM_data['2']),
+            '0': np.array(train_data['0']),
+            '1': np.array(train_data['1']),
+            '2': np.array(train_data['2']),
+            '3': np.array(train_data['3']),
+            '4': np.array(train_data['4']),
+            '5': np.array(train_data['5']),
+            '6': np.array(train_data['6']),
+            '7': np.array(train_data['7']),
+            '8': np.array(train_data['8']),
+            '9': np.array(train_data['9']),
         },
-        # np.array(GMM_data['label'])
-        np.append(np.zeros(10000),np.ones(10000))
+        np.array(train_data['label'])
     )
 )
-def train_input_fn(dataset, batch_size):
-    dataset = dataset.shuffle(20000).batch(batch_size)
+dataset = dataset.repeat(4).batch(100)
+# train_data = dataset.range()
+def train_input_fn(dataset):
     return dataset.make_one_shot_iterator().get_next()
 # a = train_input_fn(dataset=dataset,batch_size=100)
 my_feature_columns = []
-for key in range(3):
+for key in range(10):
     my_feature_columns.append(tf.feature_column.numeric_column(key = str(key)))
-classifier = tf.estimator.DNNClassifier(feature_columns=my_feature_columns, n_classes=2, hidden_units = [10,10])
-classifier.train(input_fn =lambda: train_input_fn(dataset=dataset,batch_size=100), steps=10)
+classifier = tf.estimator.DNNClassifier(feature_columns=my_feature_columns, n_classes=10, hidden_units = [50,10,10])
+classifier.train(input_fn =lambda: train_input_fn(dataset=dataset), steps=20000)
+dataset_test = tf.data.Dataset.from_tensor_slices(
+    (
+        {
+            '0': np.array(test_data['0']),
+            '1': np.array(test_data['1']),
+            '2': np.array(test_data['2']),
+            '3': np.array(test_data['3']),
+            '4': np.array(test_data['4']),
+            '5': np.array(test_data['5']),
+            '6': np.array(test_data['6']),
+            '7': np.array(test_data['7']),
+            '8': np.array(test_data['8']),
+            '9': np.array(test_data['9']),
+        },
+        np.array(test_data['label'])
+    )
+)
+dataset_test = dataset_test.batch(10000)
+# train_data = dataset.range()
+def test_input_fn(dataset):
+    return dataset_test.make_one_shot_iterator().get_next()
 # input_e = dataset.shuffle(20000).batch(100)
 # eval_result = classifier.evaluate
-eval_result = classifier.evaluate(input_fn =lambda: train_input_fn(dataset=dataset,batch_size=1000))
+eval_result = classifier.evaluate(input_fn =lambda: test_input_fn(dataset=dataset_test))
 print('\nTest set accuracy: {accuracy:0.3f}\n'.format(**eval_result))
