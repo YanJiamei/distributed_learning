@@ -6,12 +6,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import random
 from scipy.linalg import orth
 FEATURE_SIZE = 10
+SPARSE_SIZE = 100
 GMM_COMPONENT = 4
 LABEL_NUM = 10
-DATA_NUM = 100000
+DATA_NUM = 1000
 def feature_name(label, size=FEATURE_SIZE):
     return [str(label)+'_'+str(x) for x in range(size)]
 
+MAP_MATRIX = np.random.randint(0,2,size=(FEATURE_SIZE, SPARSE_SIZE))
 
 def get_RndSymPosMatrix(size = FEATURE_SIZE):
     random_list = []
@@ -34,18 +36,27 @@ def get_RndMean(size = FEATURE_SIZE):
         random_list.append(random.randint(start, stop))
     return random_list
 
+# invariant_conv = [get_RndSymPosMatrix(size=FEATURE_SIZE) for i in range(GMM_COMPONENT)]
+
 def data_construct(label, num, size = FEATURE_SIZE, gmm_size = GMM_COMPONENT):
+    
     mean = [get_RndMean() for i in range(gmm_size)]
     conv = [get_RndSymPosMatrix() for i in range(gmm_size)]
+    # conv = conv_temp + invariant_conv
+    # conv = invariant_conv
     assert isinstance(label, int),'label is not int'
     assert len(mean) == len(conv)
     count = len(mean)
-    x = np.empty(shape = [0,size])
+    x = np.empty(shape = [0,SPARSE_SIZE])
     print('\nConstructing Gaussian Mixture Multivariate Dataof label -%d-:'%label)
     for i in range(count):
         print(' (%d/%d)\tmean = %s, \n\tconvariance = %s' % (i+1,count,mean[i],conv[i]))
         temp = np.random.multivariate_normal(mean[i],conv[i],num//gmm_size)
-        x = np.concatenate((x, temp),axis = 0)
+        # print(temp)
+        temp_m = np.matrix(temp)
+        # print(temp_m)
+        temp_dot = temp_m * MAP_MATRIX
+        x = np.concatenate((x, temp_dot),axis = 0)
     x = np.round(x, decimals=4)
     # a,b = x.T
     # plt.scatter(a,b)
@@ -62,7 +73,7 @@ dataframe = pd.DataFrame()
 for i in range(LABEL_NUM):
     dataframe_temp, _ = data_construct(label = i, num = DATA_NUM)
     dataframe = pd.concat((dataframe,dataframe_temp), axis=0, ignore_index=True)
-dataframe.to_csv('./GMM_model/GMM_data/G_10M_4M_100000.csv')
+dataframe.to_csv('./GMM_model/GMM_data/G_10M_4M_1000.csv')
 
 # dataframe_A,_ = data_construct(label = 0, num = DATA_NUM)
 # dataframe_B,_ = data_construct(label = 1, num = DATA_NUM)
@@ -73,18 +84,18 @@ print(dataframe)
 # print(dataframe)
 
 # ## show 3D dots
-# x = np.array(dataframe.loc[dataframe.label==1,0])
-# y = np.array(dataframe.loc[dataframe.label==1,1])
-# z = np.array(dataframe.loc[dataframe.label==1,2])
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-# ax.scatter(x, y, z, s=20, c='r', depthshade=True)
-# x = np.array(dataframe.loc[dataframe.label==2,0])
-# y = np.array(dataframe.loc[dataframe.label==2,1])
-# z = np.array(dataframe.loc[dataframe.label==2,2])
-# ax.scatter(x, y, z, s=20, c='b', depthshade=True)
-# x = np.array(dataframe.loc[dataframe.label==3,0])
-# y = np.array(dataframe.loc[dataframe.label==3,1])
-# z = np.array(dataframe.loc[dataframe.label==3,2])
-# ax.scatter(x, y, z, s=20, c='g', depthshade=True)
-# plt.show()
+x = np.array(dataframe.loc[dataframe.label==1,0])
+y = np.array(dataframe.loc[dataframe.label==1,1])
+z = np.array(dataframe.loc[dataframe.label==1,2])
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.scatter(x, y, z, s=20, c='r', depthshade=True)
+x = np.array(dataframe.loc[dataframe.label==2,0])
+y = np.array(dataframe.loc[dataframe.label==2,1])
+z = np.array(dataframe.loc[dataframe.label==2,2])
+ax.scatter(x, y, z, s=20, c='b', depthshade=True)
+x = np.array(dataframe.loc[dataframe.label==3,0])
+y = np.array(dataframe.loc[dataframe.label==3,1])
+z = np.array(dataframe.loc[dataframe.label==3,2])
+ax.scatter(x, y, z, s=20, c='g', depthshade=True)
+plt.show()
