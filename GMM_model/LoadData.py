@@ -2,26 +2,32 @@ import pandas as pd
 import graphmodel as model
 import tensorflow as tf
 import numpy as np
-dataframe = pd.read_csv('./GMM_model/GMM_data/G_10M_4M_1000.csv', index_col=0)
+import os
+dir_path = os.path.dirname(os.path.realpath(__file__))
+tf.logging.set_verbosity(tf.logging.INFO)
+models_path = os.path.join(dir_path, 'mymodels1/feature10_100000_10_gmm/')
+checkpoint = os.path.join(models_path, 'checkpoint')
+# config=tf.ConfigProto().
+# config.inter_op_parallelism_threads = 0
+# config.intra_op_parallelism_threads = 0
+# tf.ConfigProto().inter_op_parallelism_threads=0
+dataframe = pd.read_csv('./GMM_model/GMM_data/feature10_100000_10_gmm.csv', index_col=0)
 # print(GMM_data['0'])
 dataframe = dataframe.sample(frac=1)
-train_data = dataframe[0:8000]
-test_data = dataframe[8000:10000]
+train_data = dataframe[0:80000]
+# train_data = train_data.loc[(train_data.gmm_id==2) | (train_data.gmm_id==0) | (train_data.gmm_id==4) | (train_data.gmm_id==6)| (train_data.gmm_id==8),:]
+# train_data = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==7)| (train_data.gmm_id==9),:]
+test_data = dataframe[80000:100000]
+# test_data = test_data.loc[(test_data.gmm_id==1) | (test_data.gmm_id==3) | (test_data.gmm_id==5) | (test_data.gmm_id==7)| (test_data.gmm_id==9),:]
+# test_data = test_data.loc[(test_data.gmm_id==2) | (test_data.gmm_id==4) | (test_data.gmm_id==6) | (test_data.gmm_id==8)| (test_data.gmm_id==0),:]
+FEATURE_NUM = 50
+CLASSES = 10
 # print(train_data[0:20],test_data[0:20])
+feature_list = [(str(x), np.array(train_data[str(x)])) for x in range(FEATURE_NUM)]
+feature_list = dict(feature_list)
 dataset = tf.data.Dataset.from_tensor_slices(
     (
-        {
-            '0': np.array(train_data['0']),
-            '1': np.array(train_data['1']),
-            '2': np.array(train_data['2']),
-            '3': np.array(train_data['3']),
-            '4': np.array(train_data['4']),
-            '5': np.array(train_data['5']),
-            '6': np.array(train_data['6']),
-            '7': np.array(train_data['7']),
-            '8': np.array(train_data['8']),
-            '9': np.array(train_data['9']),
-        },
+        feature_list,
         np.array(train_data['label'])
     )
 )
@@ -32,24 +38,21 @@ def train_input_fn(dataset, batch_size):
     return dataset.make_one_shot_iterator().get_next()
 # a = train_input_fn(dataset=dataset,batch_size=100)
 my_feature_columns = []
-for key in range(100):
-    my_feature_columns.append(tf.feature_column.numeric_column(key = str(key)))
-classifier = tf.estimator.DNNClassifier(feature_columns=my_feature_columns, n_classes=10, hidden_units = [10,10,10])
-classifier.train(input_fn =lambda: train_input_fn(dataset=dataset, batch_size=100), steps=20000)
+for key,_ in feature_list.items():
+    my_feature_columns.append(tf.feature_column.numeric_column(key = key))
+
+# config = tf.ConfigProto(intra_op_parallelism_threads = 0,inter_op_parallelism_threads = 0)
+
+# run_config = tf.ConfigProto()
+
+classifier = tf.estimator.DNNClassifier(model_dir=models_path,batch_norm=False, feature_columns=my_feature_columns, n_classes=CLASSES, hidden_units = [100])
+classifier.train(input_fn =lambda: train_input_fn(dataset=dataset, batch_size=100), steps=10000)
+# classifier = tf.estimator.DNNClassifier(model_dir=)
+feature_list_test = [(str(x), np.array(test_data[str(x)])) for x in range(FEATURE_NUM)]
+feature_list_test = dict(feature_list_test)
 dataset_test = tf.data.Dataset.from_tensor_slices(
     (
-        {
-            '0': np.array(test_data['0']),
-            '1': np.array(test_data['1']),
-            '2': np.array(test_data['2']),
-            '3': np.array(test_data['3']),
-            '4': np.array(test_data['4']),
-            '5': np.array(test_data['5']),
-            '6': np.array(test_data['6']),
-            '7': np.array(test_data['7']),
-            '8': np.array(test_data['8']),
-            '9': np.array(test_data['9']),
-        },
+        feature_list_test,
         np.array(test_data['label'])
     )
 )
