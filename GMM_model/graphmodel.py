@@ -9,15 +9,15 @@ OUTPUT_NODE = 10
 LAYER1_NODE = 100
 BATCH_SIZE = 100
 WEIGHT_INIT = 1.0#初始化所有来源样本的权重
-WEIGHT_THRESHOLD = 3 #阻止节点之间的数据传输
+WEIGHT_THRESHOLD = 0.0 #阻止节点之间的数据传输
 DISTRIBUTE_NODE_NUM = 3 #参与的节点数目
 TRANSFER_FRE = 20 #相互传输的instance的频率，应该也是可以更改的
 
 LEARNING_RATE_BASE = 0.01
-TRAINING_STEPS = 3000
+TRAINING_STEPS = 1500
 THETA = 2.0
-logs = './GMM_model/logs/'
-train_type = '3000/fre20/noweights/'
+logs = './GMM_model/logs/1/'
+train_type = '3000/fre20/entrotrans0.0/'
 # train_type = '1500/fre20/thre1.0/theta2.0/'
 
 log_dir=logs + train_type +'Model/'
@@ -125,31 +125,21 @@ class Model:
     @lazy_property
     def cross_entropy_mean(self):
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
-            # logits = tf.clip_by_value(self.y,1e-8,1), labels = self.y_
             logits = self.y, labels = self.y_
         )
-        # cross_entropy = tf.nn.softmax_cross_entropy_with_logits(logits = self.y, labels = self.y_)
-        weighted_cross_entropy = tf.multiply(cross_entropy, self.w)
-        cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)   
-        return cross_entropy_mean
+        # weighted_cross_entropy = tf.multiply(cross_entropy, self.w)
+        # cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)   
+        return cross_entropy
     @lazy_property
     def loss(self):
         # regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
         # regularization = regularizer(self.weights1) + regularizer(self.weights2)
-        return self.cross_entropy_mean
+        weighted_cem = tf.multiply(self.cross_entropy_mean, self.w)
+        sum_w = tf.reduce_sum(self.w)
+        sum_cross_entropy = tf.reduce_sum(weighted_cem)
+        loss = tf.divide(sum_cross_entropy, sum_w)
+        return loss
 
-
-    # @lazy_property    
-    # def learning_rate(self):
-    #     learning_rate = tf.train.exponential_decay(
-    #         LEARNING_RATE_BASE, # 基础的学习率，随着迭代的进行，更新变量时使用的
-    #                             # 学习率在这个基础上递减
-    #         self.global_step,        # 当前迭代的轮数
-    #         # mnist.train.num_examples / BATCH_SIZE, # 过完所有的训练数据需要的迭代次数
-    #         1000,
-    #         LEARNING_RATE_DECAY # 学习率的衰减速度
-    #     )
-    #     return learning_rate
     @lazy_property    
     def optimizer(self):
         return tf.train.AdagradOptimizer(learning_rate = LEARNING_RATE_BASE)
@@ -183,22 +173,26 @@ class Model:
             logits = self.y, labels = self.y_
         )
         weighted_cross_entropy = tf.multiply(cross_entropy, self.w)
-        cross_entropy_mean = tf.reduce_mean(weighted_cross_entropy)
-        weighted_cross_entropy = tf.divide(2.0, (1.0 + tf.exp(cross_entropy_mean)))
+        cross_entropy_mean = tf.divide(tf.reduce_sum(weighted_cross_entropy), tf.reduce_sum(self.w))
+        weighted_cross_entropy = tf.divide(1.0, (1.0 + tf.exp(cross_entropy_mean)))
+        # weighted_cross_entropy = tf.divide(1.0, tf.exp(cross_entropy_mean))
         return weighted_cross_entropy
-    
-    @lazy_property
-    def accuracy_weighted_norm(self):
-        #本地加权的acc，查看数据差异
-        correct_prediction_float_weighted = tf.multiply(self.w, self.correct_prediction_float)
-        accuracy_weighted = tf.reduce_sum(correct_prediction_float_weighted)
-        accuracy_weighted_norm = tf.divide(accuracy_weighted, tf.reduce_sum(self.w))
-        return accuracy_weighted_norm
-
+    # @lazy_property
+    # def weighted_cross_entropy_transfer(self):
+    #     y_transfer_infer = self.inference(input_tensor = self.x_transfer, weights1 = self.weights1
+    #                     , biases1 = self.biases1, weights2 = self.weights2, biases2 = self.biases2)
+    #     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(
+    #         logits = y_transfer_infer, labels = self.y_transfer
+    #     )
+    #     cross_entropy_mean = tf.reduce_mean(cross_entropy)
+    #     # weighted_cross_entropy = tf.divide(1.0, tf.exp(cross_entropy_mean))
+    #     return cross_entropy_mean
     @lazy_property    
     def weights_node_update(self):
         exp_ = tf.exp(1.0-self.accuracy_transfer_batch)
         weights_node_update = THETA*(self.weighted_cross_entropy)*exp_
+        # exp_ =tf.divide(1.0, tf.exp(self.weighted_cross_entropy_transfer))
+        # weights_node_update = (self.weighted_cross_entropy)*(1.0 - exp_)
         return weights_node_update
     @lazy_property    
     def transfer_weight_1(self):
@@ -276,8 +270,11 @@ def load_datasets():
     train_data = dataframe[0:80000]
     test_data = dataframe[80000:100000]
     train_data_even = train_data.loc[(train_data.gmm_id==2) | (train_data.gmm_id==0) | (train_data.gmm_id==4) | (train_data.gmm_id==6)| (train_data.gmm_id==8),:]
-    train_data_odd = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==0)| (train_data.gmm_id==2),:]
-    train_data_mix = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==7)| (train_data.gmm_id==9),:]
+    train_data_odd = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==7)| (train_data.gmm_id==9),:]
+    train_data_mix = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==0)| (train_data.gmm_id==2),:]
+    # train_data_even = train_data.loc[(train_data.gmm_id==0) | (train_data.gmm_id==1) | (train_data.gmm_id==2),:]
+    # train_data_odd = train_data.loc[(train_data.gmm_id==3) | (train_data.gmm_id==4) | (train_data.gmm_id==5),:]
+    # train_data_mix = train_data.loc[(train_data.gmm_id==6) | (train_data.gmm_id==7) | (train_data.gmm_id==8) | (train_data.gmm_id==9),:]
     test_data_odd = test_data.loc[(test_data.gmm_id==1) | (test_data.gmm_id==3) | (test_data.gmm_id==5) | (test_data.gmm_id==7)| (test_data.gmm_id==9),:]
     test_data_even = test_data.loc[(test_data.gmm_id==2) | (test_data.gmm_id==4) | (test_data.gmm_id==6) | (test_data.gmm_id==8)| (test_data.gmm_id==0),:]
     return train_data, test_data, train_data_even,train_data_odd,train_data_mix
@@ -367,12 +364,12 @@ for i in range(TRAINING_STEPS):
 
 
     local_feed_1 = feed(Graph = M1, dataset = dataset_1)
-    scalar_loss1, _ = sess1.run([M1.scalar_loss, M1.train_step], feed_dict=local_feed_1)
+    scalar_loss1, loss1,  _ = sess1.run([M1.scalar_loss, M1.loss, M1.train_step], feed_dict=local_feed_1)
     writer1.add_summary(scalar_loss1,i)
 
 
     local_feed_2 = feed(Graph = M2, dataset = dataset_2)
-    scalar_loss2, _ = sess2.run([M2.scalar_loss, M2.train_step], feed_dict=local_feed_2)
+    scalar_loss2, loss2, _ = sess2.run([M2.scalar_loss, M2.loss, M2.train_step], feed_dict=local_feed_2)
     writer2.add_summary(scalar_loss2,i)
     print(i)
   ##=====================ACCURACY==========================
@@ -407,53 +404,53 @@ for i in range(TRAINING_STEPS):
 
   ##=====================TRANSFER & UPDATE==========================
     if i%TRANSFER_FRE == 0 and i>=1 :
-#         weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-#             transfer(Graph = M, writer = writer, session = sess, 
-#                                 dataset_0 = dataset_0,
-#                                 dataset_1 = dataset_1, dataset_2 = dataset_2)
-#         if weights_node_1 > WEIGHT_THRESHOLD:
-#             count=count+1
-#             dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
-#         if weights_node_2 > WEIGHT_THRESHOLD:
-#             dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
-#             count=count+1
-#         weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-#             transfer(Graph = M1, writer = writer1, session = sess1, 
-#                                 dataset_0 = dataset_1,
-#                                 dataset_1 = dataset_0, dataset_2 = dataset_2)
-#         if weights_node_1 > WEIGHT_THRESHOLD:
-#             count=count+1
-#             dataset_1 = pd.concat([dataset_1, transfer_1_], axis=0, ignore_index=True)
-#         if weights_node_2 > WEIGHT_THRESHOLD:
-#             count=count+1
-#             dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
-#         weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-#             transfer(Graph = M2, writer = writer2, session = sess2, 
-#                                 dataset_0 = dataset_2,
-#                                 dataset_1 = dataset_0, dataset_2 = dataset_1)
-#         if weights_node_1 > WEIGHT_THRESHOLD:
-#             count=count+1
-#             dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
-#         if weights_node_2 > WEIGHT_THRESHOLD:
-#             count=count+1
-#             dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
-# print('transfer times = ', count)
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M, writer = writer, session = sess, 
+                                dataset_0 = dataset_0,
+                                dataset_1 = dataset_1, dataset_2 = dataset_2)
+        if weights_node_1 > WEIGHT_THRESHOLD:
+            count=count+1
+            dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
+        if weights_node_2 > WEIGHT_THRESHOLD:
+            dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
+            count=count+1
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M1, writer = writer1, session = sess1, 
+                                dataset_0 = dataset_1,
+                                dataset_1 = dataset_0, dataset_2 = dataset_2)
+        if weights_node_1 > WEIGHT_THRESHOLD:
+            count=count+1
+            dataset_1 = pd.concat([dataset_1, transfer_1_], axis=0, ignore_index=True)
+        if weights_node_2 > WEIGHT_THRESHOLD:
+            count=count+1
+            dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
+        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+            transfer(Graph = M2, writer = writer2, session = sess2, 
+                                dataset_0 = dataset_2,
+                                dataset_1 = dataset_0, dataset_2 = dataset_1)
+        if weights_node_1 > WEIGHT_THRESHOLD:
+            count=count+1
+            dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+        if weights_node_2 > WEIGHT_THRESHOLD:
+            count=count+1
+            dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
+print('transfer times = ', count)
 
         
 
 
 
       ##================================CONTINUE TRANSFER WEIGHTS = 1 THRE=0==============
-        WEIGHT_THRESHOLD = 0
-        transfer_0_=dataset_0.sample(n=BATCH_SIZE)
-        transfer_1_=dataset_1.sample(n=BATCH_SIZE)
-        transfer_2_=dataset_2.sample(n=BATCH_SIZE)
-        dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
-        dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
-        dataset_1 = pd.concat([dataset_1, transfer_0_], axis=0, ignore_index=True)
-        dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
-        dataset_2 = pd.concat([dataset_2, transfer_0_], axis=0, ignore_index=True)
-        dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+        # WEIGHT_THRESHOLD = 0
+        # transfer_0_=dataset_0.sample(n=BATCH_SIZE)
+        # transfer_1_=dataset_1.sample(n=BATCH_SIZE)
+        # transfer_2_=dataset_2.sample(n=BATCH_SIZE)
+        # dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
+        # dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
+        # dataset_1 = pd.concat([dataset_1, transfer_0_], axis=0, ignore_index=True)
+        # dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
+        # dataset_2 = pd.concat([dataset_2, transfer_0_], axis=0, ignore_index=True)
+        # dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
 
 
 
