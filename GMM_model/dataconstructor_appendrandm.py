@@ -6,27 +6,25 @@ from mpl_toolkits.mplot3d import Axes3D
 import random
 from scipy.linalg import orth
 import scipy.sparse
-FEATURE_SIZE = 10
-SPARSE_SIZE = 3
+FEATURE_SIZE = 20
+SPARSE_SIZE = 1
 sparse_flag = False
 GMM_COMPONENT = 10
 LABEL_NUM = 10
-DATA_NUM = 20000
+DATA_NUM = 30000
 GMM_COMPO_NUM = 100
-path = './origin/feature10gmm10.csv'
-def feature_name(label, size=FEATURE_SIZE):
-    return [str(label)+'_'+str(x) for x in range(size)]
+APPEND_D = 0
+path = './appended_data/ap20_16.csv'
+
 MAP_MATRIX = np.random.random_sample([FEATURE_SIZE, SPARSE_SIZE])
-# MAP_MATRIX = np.random.randint(0,2,size=(FEATURE_SIZE, SPARSE_SIZE))
-# SPARSE_MATRIX = scipy.sparse.rand(m = FEATURE_SIZE, n = SPARSE_SIZE, density=0.1)
-# print(SPARSE_MATRIX)
-def get_RndSymPosMatrix(size = FEATURE_SIZE):
-    random_list = []
-    start = 1
-    stop = 100
-    for i in range(size):
-        random_list.append(random.randint(start, stop))
-    D = np.diag(np.array(random_list))
+# APPEND_LIST = np.random.random_sample([DATA_NUM, FEATURE_SIZE])
+# APPEND_LABEL = np.random.randint(0,LABEL_NUM,size = [DATA_NUM,1])
+# APPEND_gmm_id = np.random.randint(0,GMM_COMPONENT, size= [DATA_NUM,1])
+# APPEND = pd.DataFrame(data = np.random.random_sample([DATA_NUM, FEATURE_SIZE]))
+# print(APPEND_gmm_id)
+# print(APPEND_LABEL)
+def get_RndSymPosMatrix(size = FEATURE_SIZE, divide = 1):
+    D = np.diag(np.random.random_sample([size,]))/divide
     V = np.random.rand(size, size)
     U = orth(V)
     D = mat(D)
@@ -34,11 +32,7 @@ def get_RndSymPosMatrix(size = FEATURE_SIZE):
     A = U.I * D * U
     return A
 def get_RndMean(size = FEATURE_SIZE):
-    random_list = []
-    start = -100
-    stop = 100
-    for i in range(size):
-        random_list.append(random.randint(start, stop))
+    random_list = np.random.random_sample([size,])
     return random_list
 
 # invariant_conv = [get_RndSymPosMatrix(size=FEATURE_SIZE) for i in range(GMM_COMPONENT)]
@@ -67,6 +61,10 @@ def data_construct(label, num, gmm_id, size = FEATURE_SIZE, gmm_size = 1):
         x = np.concatenate((x, temp),axis = 0)
 
     x = np.round(x, decimals=4)
+    random_append = np.random.normal(loc = 0.5,scale = 10,size = [num,APPEND_D])
+    x = np.concatenate((random_append, x), axis = 1)
+    # x = np.concatenate((np.random.random_sample([num, APPEND_D]), x), axis = 1)
+    # x = np.concatenate(x, (np.random.random_sample([num, FEATURE_SIZE])), axis = 1)
     dataframe = pd.DataFrame(data = x)
     temp = pd.DataFrame([label for i in range(num)])
     dataframe['label'] = temp

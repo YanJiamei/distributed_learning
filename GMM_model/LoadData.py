@@ -1,26 +1,23 @@
 import pandas as pd
-import graphmodel as model
 import tensorflow as tf
 import numpy as np
 import os
 dir_path = os.path.dirname(os.path.realpath(__file__))
+print(dir_path)
 tf.logging.set_verbosity(tf.logging.INFO)
-models_path = os.path.join(dir_path, 'mymodels1/feature10_100000_10_gmm/')
+models_path = os.path.join(dir_path, 'appended_data/2/')
 checkpoint = os.path.join(models_path, 'checkpoint')
-# config=tf.ConfigProto().
-# config.inter_op_parallelism_threads = 0
-# config.intra_op_parallelism_threads = 0
-# tf.ConfigProto().inter_op_parallelism_threads=0
-dataframe = pd.read_csv('./GMM_model/GMM_data/feature10_100000_10_gmm.csv', index_col=0)
+
+dataframe = pd.read_csv('./origin/feature10gmm10.csv', index_col=0)
 # print(GMM_data['0'])
 dataframe = dataframe.sample(frac=1)
-train_data = dataframe[0:80000]
+train_data = dataframe[0:8000]
 # train_data = train_data.loc[(train_data.gmm_id==2) | (train_data.gmm_id==0) | (train_data.gmm_id==4) | (train_data.gmm_id==6)| (train_data.gmm_id==8),:]
 # train_data = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==7)| (train_data.gmm_id==9),:]
-test_data = dataframe[80000:100000]
+test_data = dataframe[8000:10000]
 # test_data = test_data.loc[(test_data.gmm_id==1) | (test_data.gmm_id==3) | (test_data.gmm_id==5) | (test_data.gmm_id==7)| (test_data.gmm_id==9),:]
 # test_data = test_data.loc[(test_data.gmm_id==2) | (test_data.gmm_id==4) | (test_data.gmm_id==6) | (test_data.gmm_id==8)| (test_data.gmm_id==0),:]
-FEATURE_NUM = 50
+FEATURE_NUM = 10
 CLASSES = 10
 # print(train_data[0:20],test_data[0:20])
 feature_list = [(str(x), np.array(train_data[str(x)])) for x in range(FEATURE_NUM)]
@@ -28,7 +25,7 @@ feature_list = dict(feature_list)
 dataset = tf.data.Dataset.from_tensor_slices(
     (
         feature_list,
-        np.array(train_data['label'])
+        np.array(train_data['label'].astype(int))
     )
 )
 # dataset = dataset.repeat(10).batch(100)
@@ -53,7 +50,7 @@ feature_list_test = dict(feature_list_test)
 dataset_test = tf.data.Dataset.from_tensor_slices(
     (
         feature_list_test,
-        np.array(test_data['label'])
+        np.array(test_data['label'].astype(int))
     )
 )
 # dataset_test = dataset_test.batch(100)

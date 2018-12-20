@@ -3,21 +3,42 @@ import functools
 import numpy as np
 import pandas as pd
 from tensorflow.python.framework import dtypes
-INPUT_NODE = 50
+INPUT_NODE = 10
 OUTPUT_NODE = 10
 
 LAYER1_NODE = 100
 BATCH_SIZE = 100
 WEIGHT_INIT = 1.0#初始化所有来源样本的权重
-WEIGHT_THRESHOLD = 0.0 #阻止节点之间的数据传输
-DISTRIBUTE_NODE_NUM = 3 #参与的节点数目
-TRANSFER_FRE = 20 #相互传输的instance的频率，应该也是可以更改的
-
 LEARNING_RATE_BASE = 0.01
-TRAINING_STEPS = 1500
+DISTRIBUTE_NODE_NUM = 3 #参与的节点数目
+
+WEIGHT_THRESHOLD = 1.4 #阻止节点之间的数据传输
+TRANSFER_FRE = 100 #相互传输的instance的频率，应该也是可以更改的
+TRAINING_STEPS = 2000
 THETA = 2.0
-logs = './GMM_model/logs/1/'
-train_type = '3000/fre20/entrotrans0.0/'
+data_dir = './origin/feature10gmm10.csv'
+train_all = False
+no_trans = False
+no_thre = False
+weight_one = True
+weighted = False
+if no_trans:
+    TRANSFER_FRE = 100000
+if no_thre:
+    WEIGHT_THRESHOLD = 0.0
+
+logs = './origin/logs/2/'
+if train_all:
+    train_type = 'theta2.0/train_all/'
+elif no_trans:
+    train_type = 'theta2.0/no_trans/'
+elif no_thre:
+    train_type = 'theta2.0/no_thre/'
+elif weight_one:
+    train_type = 'theta2.0/weight_one/'
+else:
+    train_type = 'theta2.0/weighted/thre' + str(WEIGHT_THRESHOLD) + '/'
+
 # train_type = '1500/fre20/thre1.0/theta2.0/'
 
 log_dir=logs + train_type +'Model/'
@@ -263,20 +284,28 @@ class ArgmaxModel:
         return tf.summary.scalar('total_acc', self.accuracy)
 
 def load_datasets():
-    dataframe = pd.read_csv('./GMM_model/GMM_data/feature10_100000_10_gmm.csv', index_col=0)
+    dataframe = pd.read_csv(data_dir, index_col=0)
     dataframe = dataframe.sample(frac=1)
     dataframe['weights'] = 1.0
+    data_num, _ = dataframe.shape
+    train_num = int(data_num*0.8)
     # print(dataframe)
-    train_data = dataframe[0:80000]
-    test_data = dataframe[80000:100000]
-    train_data_even = train_data.loc[(train_data.gmm_id==2) | (train_data.gmm_id==0) | (train_data.gmm_id==4) | (train_data.gmm_id==6)| (train_data.gmm_id==8),:]
-    train_data_odd = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==7)| (train_data.gmm_id==9),:]
-    train_data_mix = train_data.loc[(train_data.gmm_id==1) | (train_data.gmm_id==3) | (train_data.gmm_id==5) | (train_data.gmm_id==0)| (train_data.gmm_id==2),:]
+    train_data = dataframe[0:train_num]
+    test_data = dataframe[train_num:data_num]
+    # train_data_even = dataframe[0:4000].sample(frac=1)
+    # train_data_odd = dataframe[4000:8000].sample(frac=1)
+    # train_data_mix = dataframe[2000:6000].sample(frac=1)
+    train_data_even = train_data.loc[(train_data.gmm_id==0)| (train_data.gmm_id==1)| (train_data.gmm_id==2)| (train_data.gmm_id==3)| (train_data.gmm_id==9)  ,:]
+    train_data_odd = train_data.loc[(train_data.gmm_id==4)| (train_data.gmm_id==5)| (train_data.gmm_id==6)| (train_data.gmm_id==7) | (train_data.gmm_id==8),:]
+    train_data_mix = train_data.loc[(train_data.gmm_id==5)| (train_data.gmm_id==6)| (train_data.gmm_id==7)| (train_data.gmm_id==8) | (train_data.gmm_id==9) ,:]
+    # train_data_even = train_data_even.sample(frac=0.1)
+    # train_data_odd = train_data_odd.sample(frac=0.1)
+    # train_data_mix = train_data_mix.sample(frac=0.1)
     # train_data_even = train_data.loc[(train_data.gmm_id==0) | (train_data.gmm_id==1) | (train_data.gmm_id==2),:]
     # train_data_odd = train_data.loc[(train_data.gmm_id==3) | (train_data.gmm_id==4) | (train_data.gmm_id==5),:]
     # train_data_mix = train_data.loc[(train_data.gmm_id==6) | (train_data.gmm_id==7) | (train_data.gmm_id==8) | (train_data.gmm_id==9),:]
-    test_data_odd = test_data.loc[(test_data.gmm_id==1) | (test_data.gmm_id==3) | (test_data.gmm_id==5) | (test_data.gmm_id==7)| (test_data.gmm_id==9),:]
-    test_data_even = test_data.loc[(test_data.gmm_id==2) | (test_data.gmm_id==4) | (test_data.gmm_id==6) | (test_data.gmm_id==8)| (test_data.gmm_id==0),:]
+    # test_data_odd = test_data.loc[(test_data.gmm_id==1) | (test_data.gmm_id==3) | (test_data.gmm_id==5) | (test_data.gmm_id==7)| (test_data.gmm_id==9),:]
+    # test_data_even = test_data.loc[(test_data.gmm_id==2) | (test_data.gmm_id==4) | (test_data.gmm_id==6) | (test_data.gmm_id==8)| (test_data.gmm_id==0),:]
     return train_data, test_data, train_data_even,train_data_odd,train_data_mix
 
 train_data, test_data, dataset_0, dataset_1, dataset_2 = load_datasets()
@@ -311,14 +340,14 @@ def transfer(Graph, writer, session,
         Graph.y_transfer: transfer_1_.iloc[:,INPUT_NODE].as_matrix(),
         Graph.x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
         Graph.y_:local_0_.iloc[:,INPUT_NODE].as_matrix(), 
-        Graph.w: local_0_.iloc[:, INPUT_NODE+1].as_matrix()
+        Graph.w: local_0_.iloc[:, INPUT_NODE+2].as_matrix()
     }
     weights_update_feed_2 = {
         Graph.x_transfer: transfer_2_.iloc[:,range(INPUT_NODE)].as_matrix(),
         Graph.y_transfer: transfer_2_.iloc[:,INPUT_NODE].as_matrix(),
         Graph.x :local_0_.iloc[:,range(INPUT_NODE)].as_matrix(), 
         Graph.y_:local_0_.iloc[:,INPUT_NODE].as_matrix(), 
-        Graph.w: local_0_.iloc[:, INPUT_NODE+1].as_matrix()
+        Graph.w: local_0_.iloc[:, INPUT_NODE+2].as_matrix()
     }
     #计算差异并更新传输weight
     scalar_weight_1, weights_node_1 = session.run([Graph.scalar_weight_1, Graph.transfer_weight_1], feed_dict=weights_update_feed_1 )
@@ -326,35 +355,37 @@ def transfer(Graph, writer, session,
     writer.add_summary(scalar_weight_1,global_step)
     writer.add_summary(scalar_weight_2,global_step)
     #更新传送过来的batch中的weights
-    transfer_1_.iloc[:, INPUT_NODE+1] = weights_node_1
-    transfer_2_.iloc[:, INPUT_NODE+1] = weights_node_2
+    transfer_1_.iloc[:, INPUT_NODE+2] = weights_node_1
+    transfer_2_.iloc[:, INPUT_NODE+2] = weights_node_2
     return weights_node_1, weights_node_2, transfer_1_, transfer_2_
 
 def feed(Graph, dataset, batch_size = BATCH_SIZE):
-    feed = dataset.sample(n=batch_size)
+    feed = dataset.sample(frac = 1)
     # feed = train_all.sample(n=BATCH_SIZE)
     local_feed_0 = {
         Graph.x: feed.iloc[:,range(INPUT_NODE)].as_matrix(), 
-        Graph.y_: feed.iloc[:,INPUT_NODE].as_matrix(), 
-        Graph.w: feed.iloc[:, INPUT_NODE+1].as_matrix()
+        Graph.y_: feed.iloc[:, INPUT_NODE].as_matrix(), 
+        Graph.w: feed.iloc[:, INPUT_NODE+2].as_matrix()
     }
     return local_feed_0
 
 count = 0
-##train all training in one node
-# for i in range(TRAINING_STEPS):
+# train all training in one node
+# train_data = train_data.sample(3200)
+if train_all:
+    for i in range(TRAINING_STEPS):
 
-#     local_feed_0 = feed(Graph = M, dataset = train_data)
-#     scalar_loss, loss, _ = sess.run([M.scalar_loss, M.loss, M.train_step], feed_dict=local_feed_0)
-#     writer.add_summary(scalar_loss,i)
+        local_feed_0 = feed(Graph = M, dataset = train_data)
+        scalar_loss, loss, _ = sess.run([M.scalar_loss, M.loss, M.train_step], feed_dict=local_feed_0)
+        writer.add_summary(scalar_loss,i)
 
-#   ##=====================ACCURACY==========================
-#     local_feed_0 = feed(Graph = M, dataset = test_data)
-#     M.flag = True
-#     scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
-#     writer.add_summary(scalar_acc, i)
-# writer.close()
-# sess.close()
+    ##=====================ACCURACY==========================
+        local_feed_0 = feed(Graph = M, dataset = test_data)
+        M.flag = True
+        scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
+        writer.add_summary(scalar_acc, i)
+    writer.close()
+    sess.close()
 
 for i in range(TRAINING_STEPS):
 
@@ -373,67 +404,79 @@ for i in range(TRAINING_STEPS):
     writer2.add_summary(scalar_loss2,i)
     print(i)
   ##=====================ACCURACY==========================
-    local_feed_0 = feed(Graph = M, dataset = test_data)
-    scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
-    writer.add_summary(scalar_acc, i)
+    if i%100 == 0:
+        local_feed_0 = feed(Graph = M, dataset = test_data)
+        scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
+        writer.add_summary(scalar_acc, i)
 
-    local_feed_0 = feed(Graph = M1, dataset = test_data)
-    scalar_acc, validate_acc = sess1.run([M1.scalar_acc, M1.accuracy], feed_dict=local_feed_0)
-    writer1.add_summary(scalar_acc, i)
+        local_feed_0 = feed(Graph = M1, dataset = test_data)
+        scalar_acc, validate_acc = sess1.run([M1.scalar_acc, M1.accuracy], feed_dict=local_feed_0)
+        writer1.add_summary(scalar_acc, i)
 
-    local_feed_0 = feed(Graph = M2, dataset = test_data)
-    scalar_acc, validate_acc = sess2.run([M2.scalar_acc, M2.accuracy], feed_dict=local_feed_0)
-    writer2.add_summary(scalar_acc, i)
+        local_feed_0 = feed(Graph = M2, dataset = test_data)
+        scalar_acc, validate_acc = sess2.run([M2.scalar_acc, M2.accuracy], feed_dict=local_feed_0)
+        writer2.add_summary(scalar_acc, i)
 
-  ##=====================SUM ACC=============================
-    feed_data = test_data.sample(n = BATCH_SIZE)
-    feed_x = feed_data.iloc[:,range(INPUT_NODE)].as_matrix()
-    feed_y_ = feed_data.iloc[:,INPUT_NODE].as_matrix()
-    y0 = sess.run(M.y, feed_dict={M.x: feed_x})
-    y1 = sess1.run(M1.y, feed_dict={M1.x: feed_x})
-    y2 = sess2.run(M2.y, feed_dict={M2.x: feed_x})
-    feed_test = {
-        T.y1 : y0,
-        T.y2 : y1,
-        T.y3 : y2,
-        T.y_test : feed_y_
-    }
-    scalar_acc_tst, tst_acc = sess_tst.run([T.scalar_acc, T.accuracy], feed_dict = feed_test)
-    writer_tst.add_summary(scalar_acc_tst, i)
-    print('test acc = ', tst_acc)
+    ##=====================SUM ACC=============================
+        feed_data = test_data.sample(n = BATCH_SIZE)
+        feed_x = feed_data.iloc[:,range(INPUT_NODE)].as_matrix()
+        feed_y_ = feed_data.iloc[:,INPUT_NODE].as_matrix()
+        y0 = sess.run(M.y, feed_dict={M.x: feed_x})
+        y1 = sess1.run(M1.y, feed_dict={M1.x: feed_x})
+        y2 = sess2.run(M2.y, feed_dict={M2.x: feed_x})
+        feed_test = {
+            T.y1 : y0,
+            T.y2 : y1,
+            T.y3 : y2,
+            T.y_test : feed_y_
+        }
+        scalar_acc_tst, tst_acc = sess_tst.run([T.scalar_acc, T.accuracy], feed_dict = feed_test)
+        writer_tst.add_summary(scalar_acc_tst, i)
+        print('test acc = ', tst_acc)
 
   ##=====================TRANSFER & UPDATE==========================
     if i%TRANSFER_FRE == 0 and i>=1 :
-        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-            transfer(Graph = M, writer = writer, session = sess, 
-                                dataset_0 = dataset_0,
-                                dataset_1 = dataset_1, dataset_2 = dataset_2)
-        if weights_node_1 > WEIGHT_THRESHOLD:
-            count=count+1
+        if weighted:
+            weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+                transfer(Graph = M, writer = writer, session = sess, 
+                                    dataset_0 = dataset_0,
+                                    dataset_1 = dataset_1, dataset_2 = dataset_2)
+            if weights_node_1 > WEIGHT_THRESHOLD:
+                count=count+1
+                dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
+            if weights_node_2 > WEIGHT_THRESHOLD:
+                dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
+                count=count+1
+            weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+                transfer(Graph = M1, writer = writer1, session = sess1, 
+                                    dataset_0 = dataset_1,
+                                    dataset_1 = dataset_0, dataset_2 = dataset_2)
+            if weights_node_1 > WEIGHT_THRESHOLD:
+                count=count+1
+                dataset_1 = pd.concat([dataset_1, transfer_1_], axis=0, ignore_index=True)
+            if weights_node_2 > WEIGHT_THRESHOLD:
+                count=count+1
+                dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
+            weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
+                transfer(Graph = M2, writer = writer2, session = sess2, 
+                                    dataset_0 = dataset_2,
+                                    dataset_1 = dataset_0, dataset_2 = dataset_1)
+            if weights_node_1 > WEIGHT_THRESHOLD:
+                count=count+1
+                dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+            if weights_node_2 > WEIGHT_THRESHOLD:
+                count=count+1
+                dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
+        else:
+            transfer_0_=dataset_0.sample(n=BATCH_SIZE)
+            transfer_1_=dataset_1.sample(n=BATCH_SIZE)
+            transfer_2_=dataset_2.sample(n=BATCH_SIZE)
             dataset_0 = pd.concat([dataset_0, transfer_1_], axis=0, ignore_index=True)
-        if weights_node_2 > WEIGHT_THRESHOLD:
             dataset_0 = pd.concat([dataset_0, transfer_2_], axis=0, ignore_index=True)
-            count=count+1
-        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-            transfer(Graph = M1, writer = writer1, session = sess1, 
-                                dataset_0 = dataset_1,
-                                dataset_1 = dataset_0, dataset_2 = dataset_2)
-        if weights_node_1 > WEIGHT_THRESHOLD:
-            count=count+1
-            dataset_1 = pd.concat([dataset_1, transfer_1_], axis=0, ignore_index=True)
-        if weights_node_2 > WEIGHT_THRESHOLD:
-            count=count+1
+            dataset_1 = pd.concat([dataset_1, transfer_0_], axis=0, ignore_index=True)
             dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
-        weights_node_1, weights_node_2, transfer_1_, transfer_2_ = \
-            transfer(Graph = M2, writer = writer2, session = sess2, 
-                                dataset_0 = dataset_2,
-                                dataset_1 = dataset_0, dataset_2 = dataset_1)
-        if weights_node_1 > WEIGHT_THRESHOLD:
-            count=count+1
+            dataset_2 = pd.concat([dataset_2, transfer_0_], axis=0, ignore_index=True)
             dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
-        if weights_node_2 > WEIGHT_THRESHOLD:
-            count=count+1
-            dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
 print('transfer times = ', count)
 
         
