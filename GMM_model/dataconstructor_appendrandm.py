@@ -11,10 +11,10 @@ SPARSE_SIZE = 1
 sparse_flag = False
 GMM_COMPONENT = 10
 LABEL_NUM = 10
-DATA_NUM = 30000
+DATA_NUM = 10000
 GMM_COMPO_NUM = 100
 APPEND_D = 0
-path = './appended_data/ap20_16.csv'
+path = './origin/origin20.csv'
 
 MAP_MATRIX = np.random.random_sample([FEATURE_SIZE, SPARSE_SIZE])
 # APPEND_LIST = np.random.random_sample([DATA_NUM, FEATURE_SIZE])
@@ -23,7 +23,7 @@ MAP_MATRIX = np.random.random_sample([FEATURE_SIZE, SPARSE_SIZE])
 # APPEND = pd.DataFrame(data = np.random.random_sample([DATA_NUM, FEATURE_SIZE]))
 # print(APPEND_gmm_id)
 # print(APPEND_LABEL)
-def get_RndSymPosMatrix(size = FEATURE_SIZE, divide = 1):
+def get_RndSymPosMatrix(size = FEATURE_SIZE, divide = 20):
     D = np.diag(np.random.random_sample([size,]))/divide
     V = np.random.rand(size, size)
     U = orth(V)

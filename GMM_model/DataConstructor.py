@@ -7,17 +7,17 @@ import random
 from scipy.linalg import orth
 import scipy.sparse
 FEATURE_SIZE = 10
-SPARSE_SIZE = 3
-sparse_flag = False
+SPARSE_SIZE = 50
+sparse_flag = True
 GMM_COMPONENT = 10
 LABEL_NUM = 10
-DATA_NUM = 20000
+DATA_NUM = 10000
 GMM_COMPO_NUM = 100
-path = './origin/feature10gmm10.csv'
+path = './origin/feature10-50gmm10.csv'
 def feature_name(label, size=FEATURE_SIZE):
     return [str(label)+'_'+str(x) for x in range(size)]
-MAP_MATRIX = np.random.random_sample([FEATURE_SIZE, SPARSE_SIZE])
-# MAP_MATRIX = np.random.randint(0,2,size=(FEATURE_SIZE, SPARSE_SIZE))
+# MAP_MATRIX = np.random.random_sample([FEATURE_SIZE, SPARSE_SIZE])
+MAP_MATRIX = np.random.randint(0,2,size=(FEATURE_SIZE, SPARSE_SIZE))
 # SPARSE_MATRIX = scipy.sparse.rand(m = FEATURE_SIZE, n = SPARSE_SIZE, density=0.1)
 # print(SPARSE_MATRIX)
 def get_RndSymPosMatrix(size = FEATURE_SIZE):
@@ -35,7 +35,7 @@ def get_RndSymPosMatrix(size = FEATURE_SIZE):
     return A
 def get_RndMean(size = FEATURE_SIZE):
     random_list = []
-    start = -100
+    start = 1
     stop = 100
     for i in range(size):
         random_list.append(random.randint(start, stop))

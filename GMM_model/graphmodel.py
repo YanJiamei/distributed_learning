@@ -3,7 +3,7 @@ import functools
 import numpy as np
 import pandas as pd
 from tensorflow.python.framework import dtypes
-INPUT_NODE = 10
+INPUT_NODE = 20
 OUTPUT_NODE = 10
 
 LAYER1_NODE = 100
@@ -12,22 +12,24 @@ WEIGHT_INIT = 1.0#初始化所有来源样本的权重
 LEARNING_RATE_BASE = 0.01
 DISTRIBUTE_NODE_NUM = 3 #参与的节点数目
 
-WEIGHT_THRESHOLD = 1.4 #阻止节点之间的数据传输
+WEIGHT_THRESHOLD = 1.5 #阻止节点之间的数据传输
 TRANSFER_FRE = 100 #相互传输的instance的频率，应该也是可以更改的
-TRAINING_STEPS = 2000
+TRAINING_STEPS = 50000
 THETA = 2.0
-data_dir = './origin/feature10gmm10.csv'
+data_dir = './origin/origin20.csv'
+logs = './origin/logs/origin20-div20/'
 train_all = False
 no_trans = False
 no_thre = False
 weight_one = True
 weighted = False
 if no_trans:
-    TRANSFER_FRE = 100000
+    TRANSFER_FRE = 1000000
 if no_thre:
     WEIGHT_THRESHOLD = 0.0
+    weighted = True
 
-logs = './origin/logs/2/'
+
 if train_all:
     train_type = 'theta2.0/train_all/'
 elif no_trans:
@@ -286,8 +288,8 @@ class ArgmaxModel:
 def load_datasets():
     dataframe = pd.read_csv(data_dir, index_col=0)
     dataframe = dataframe.sample(frac=1)
-    dataframe['weights'] = 1.0
     data_num, _ = dataframe.shape
+    dataframe['weights'] = 1.0
     train_num = int(data_num*0.8)
     # print(dataframe)
     train_data = dataframe[0:train_num]
@@ -295,9 +297,9 @@ def load_datasets():
     # train_data_even = dataframe[0:4000].sample(frac=1)
     # train_data_odd = dataframe[4000:8000].sample(frac=1)
     # train_data_mix = dataframe[2000:6000].sample(frac=1)
-    train_data_even = train_data.loc[(train_data.gmm_id==0)| (train_data.gmm_id==1)| (train_data.gmm_id==2)| (train_data.gmm_id==3)| (train_data.gmm_id==9)  ,:]
-    train_data_odd = train_data.loc[(train_data.gmm_id==4)| (train_data.gmm_id==5)| (train_data.gmm_id==6)| (train_data.gmm_id==7) | (train_data.gmm_id==8),:]
-    train_data_mix = train_data.loc[(train_data.gmm_id==5)| (train_data.gmm_id==6)| (train_data.gmm_id==7)| (train_data.gmm_id==8) | (train_data.gmm_id==9) ,:]
+    train_data_even = train_data.loc[(train_data.gmm_id==0)| (train_data.gmm_id==2)| (train_data.gmm_id==4)| (train_data.gmm_id==6)| (train_data.gmm_id==8)  ,:]
+    train_data_odd = train_data.loc[(train_data.gmm_id==1)| (train_data.gmm_id==3)| (train_data.gmm_id==5)| (train_data.gmm_id==7) | (train_data.gmm_id==9),:]
+    train_data_mix = train_data.loc[(train_data.gmm_id==0)| (train_data.gmm_id==2)| (train_data.gmm_id==4)| (train_data.gmm_id==1) | (train_data.gmm_id==3),:]
     # train_data_even = train_data_even.sample(frac=0.1)
     # train_data_odd = train_data_odd.sample(frac=0.1)
     # train_data_mix = train_data_mix.sample(frac=0.1)
@@ -309,6 +311,7 @@ def load_datasets():
     return train_data, test_data, train_data_even,train_data_odd,train_data_mix
 
 train_data, test_data, dataset_0, dataset_1, dataset_2 = load_datasets()
+# print(train_data)
 M = Model()
 M1 = Model()
 M2 = Model()
@@ -384,6 +387,7 @@ if train_all:
         M.flag = True
         scalar_acc, validate_acc = sess.run([M.scalar_acc, M.accuracy], feed_dict=local_feed_0)
         writer.add_summary(scalar_acc, i)
+    print('accuracy = %f' % validate_acc)
     writer.close()
     sess.close()
 
@@ -467,7 +471,7 @@ for i in range(TRAINING_STEPS):
             if weights_node_2 > WEIGHT_THRESHOLD:
                 count=count+1
                 dataset_2 = pd.concat([dataset_2, transfer_2_], axis=0, ignore_index=True)
-        else:
+        elif count<240:
             transfer_0_=dataset_0.sample(n=BATCH_SIZE)
             transfer_1_=dataset_1.sample(n=BATCH_SIZE)
             transfer_2_=dataset_2.sample(n=BATCH_SIZE)
@@ -477,6 +481,7 @@ for i in range(TRAINING_STEPS):
             dataset_1 = pd.concat([dataset_1, transfer_2_], axis=0, ignore_index=True)
             dataset_2 = pd.concat([dataset_2, transfer_0_], axis=0, ignore_index=True)
             dataset_2 = pd.concat([dataset_2, transfer_1_], axis=0, ignore_index=True)
+            count = count+6
 print('transfer times = ', count)
 
         
